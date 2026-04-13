@@ -29,8 +29,8 @@ function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-800 bg-slate-950/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center justify-around">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/85 backdrop-blur-2xl border-t border-white/[0.08] pb-[env(safe-area-inset-bottom)]">
+      <div className="flex items-stretch justify-around">
         {tabs.map((tab) => {
           const isActive =
             tab.path === "/"
@@ -41,12 +41,14 @@ function BottomNav() {
               key={tab.path}
               onClick={() => setLocation(tab.path)}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs transition-colors touch-target",
-                isActive ? "text-blue-400" : "text-slate-500",
+                "flex flex-1 flex-col items-center gap-1 pt-3 pb-2 border-t-2 transition-colors touch-target",
+                isActive
+                  ? "text-white border-white"
+                  : "text-white/30 border-transparent hover:text-white/60"
               )}
             >
-              <tab.icon className="h-5 w-5" />
-              <span>{tab.label}</span>
+              <tab.icon size={20} strokeWidth={1} />
+              <span className="text-[10px] uppercase tracking-wider">{tab.label}</span>
             </button>
           );
         })}
@@ -61,7 +63,7 @@ export default function App() {
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
+        <div className="h-6 w-6 animate-spin rounded-full border border-white/30 border-t-white" />
       </div>
     );
   }
@@ -72,11 +74,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen pb-20 pt-14">
-      {/* Top Header with Settings */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 px-4 flex items-center justify-between">
-        <div className="font-bold text-lg">Prewencja i Forma</div>
-        <button onClick={() => window.location.href = "/ustawienia"} className="p-2 transition-colors hover:text-blue-400 text-slate-400">
-          <Settings className="h-6 w-6" />
+      {/* Top Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/90 backdrop-blur-xl border-b border-white/[0.06] px-4 flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Prewencja i Forma</div>
+        <button onClick={() => window.location.href = "/ustawienia"} className="p-2 transition-colors text-white/50 hover:text-white/80">
+          <Settings size={20} strokeWidth={1} />
         </button>
       </header>
 

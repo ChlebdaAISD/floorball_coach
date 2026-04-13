@@ -33,18 +33,23 @@ export default function HistoryPage() {
   });
 
   return (
-    <div className="p-4">
-      <h1 className="mb-4 text-xl font-bold">Historia treningów</h1>
+    <div className="flex-1 overflow-y-auto bg-black text-white px-6 py-8 min-h-[100dvh]">
+      <div className="mt-4 mb-8">
+        <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Twoje treningi</p>
+        <h1 className="text-2xl font-semibold">Historia</h1>
+      </div>
 
-      {/* Filter */}
-      <div className="mb-4 flex gap-2">
+      {/* Filter Chips */}
+      <div className="mb-8 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
         {(["all", "gym", "floorball", "running"] as WorkoutType[]).map((t) => (
           <button
             key={t}
             onClick={() => setFilter(t)}
             className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-medium",
-              filter === t ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400",
+              "whitespace-nowrap rounded-full px-5 py-2.5 text-xs font-semibold tracking-wide transition-colors border",
+              filter === t
+                ? "bg-white text-black border-white"
+                : "bg-transparent border-white/[0.15] text-white/40 hover:text-white hover:border-white/30"
             )}
           >
             {t === "all" ? "Wszystkie" : t === "gym" ? "Siłownia" : t === "floorball" ? "Unihokej" : "Bieg"}
@@ -54,38 +59,29 @@ export default function HistoryPage() {
 
       {isLoading ? (
         <div className="flex h-32 items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+          <Loader2 size={18} strokeWidth={1} className="animate-spin text-white/30" />
         </div>
       ) : workouts.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">
-          Brak zapisanych treningów
+        <p className="py-12 text-center text-sm font-light text-white/20">
+          Możesz rozpocząć swój pierwszy trening w panelu Głównym.
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3 pb-32">
           {workouts.map((w: any) => {
             const isExpanded = expandedId === w.id;
             return (
-              <div key={w.id}>
+              <div key={w.id} className="rounded-2xl bg-[#111111] border border-white/[0.12] overflow-hidden transition-colors hover:border-white/20">
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : w.id)}
-                  className="flex w-full items-center gap-3 rounded-xl bg-slate-900 p-4 text-left"
+                  className="flex w-full items-center gap-4 p-5 text-left"
                 >
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-lg",
-                      w.workoutType === "gym"
-                        ? "bg-blue-500/20"
-                        : w.workoutType === "floorball"
-                          ? "bg-green-500/20"
-                          : "bg-orange-500/20",
-                    )}
-                  >
-                    {w.workoutType === "gym" && <Dumbbell className="h-5 w-5 text-blue-400" />}
-                    {w.workoutType === "floorball" && <Target className="h-5 w-5 text-green-400" />}
-                    {w.workoutType === "running" && <Footprints className="h-5 w-5 text-orange-400" />}
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5">
+                    {w.workoutType === "gym" && <Dumbbell size={20} strokeWidth={1} className="text-white/60" />}
+                    {w.workoutType === "floorball" && <Target size={20} strokeWidth={1} className="text-white/60" />}
+                    {w.workoutType === "running" && <Footprints size={20} strokeWidth={1} className="text-white/60" />}
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium">
+                    <p className="text-sm font-semibold text-white">
                       {w.workoutType === "gym"
                         ? "Siłownia"
                         : w.workoutType === "floorball"
@@ -94,7 +90,7 @@ export default function HistoryPage() {
                             : "Trening drużynowy"
                           : "Bieg"}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-[11px] text-white/30 font-light mt-1 tracking-wide">
                       {format(parseISO(w.date), "EEEE, d MMM", { locale: pl })}
                       {w.durationMinutes && ` · ${w.durationMinutes} min`}
                       {w.totalTonnage && ` · ${w.totalTonnage.toFixed(0)} kg`}
@@ -103,73 +99,77 @@ export default function HistoryPage() {
                     </p>
                   </div>
                   <ChevronRight
+                    size={18}
+                    strokeWidth={1}
                     className={cn(
-                      "h-4 w-4 text-slate-600 transition-transform",
+                      "text-white/20 transition-transform duration-300",
                       isExpanded && "rotate-90",
                     )}
                   />
                 </button>
 
                 {isExpanded && detail && (
-                  <div className="mt-1 rounded-xl bg-slate-900/50 p-4">
+                  <div className="border-t border-white/[0.06] bg-black/30 p-5">
                     {detail.notes && (
-                      <p className="mb-3 text-sm text-slate-400">
+                      <p className="mb-4 text-sm font-light text-white/30 italic">
                         "{detail.notes}"
                       </p>
                     )}
 
                     {w.workoutType === "gym" && detail.exerciseLogs?.length > 0 && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {detail.exerciseLogs.map((ex: any) => (
                           <div
                             key={ex.id}
-                            className="flex items-center gap-2 text-sm"
+                            className="flex items-start gap-4 text-sm"
                           >
                             <span
                               className={cn(
-                                "h-2 w-2 rounded-full",
-                                ex.completed ? "bg-green-500" : "bg-slate-600",
+                                "mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0",
+                                ex.completed ? "bg-[#c5e063]" : "bg-white/20",
                               )}
                             />
-                            <span className={cn(ex.completed ? "text-slate-200" : "text-slate-500 line-through")}>
-                              {ex.exerciseName}
-                            </span>
-                            <span className="text-xs text-slate-500">
-                              {ex.plannedSets}×{ex.plannedReps}
-                              {ex.plannedWeight ? ` @ ${ex.plannedWeight}kg` : ""}
-                            </span>
-                            {ex.wasModifiedByAi && (
-                              <span className="text-xs text-yellow-400">AI</span>
-                            )}
+                            <div className="flex-1 flex flex-col gap-0.5">
+                              <span className={cn("font-medium text-sm", ex.completed ? "text-white" : "text-white/30 line-through")}>
+                                {ex.exerciseName}
+                              </span>
+                              <div className="flex items-center gap-2 text-[11px] font-light tracking-wide text-white/30">
+                                <span>{ex.plannedSets}×{ex.plannedReps}</span>
+                                {ex.plannedWeight ? <span>{ex.plannedWeight} kg</span> : null}
+                                {ex.wasModifiedByAi && (
+                                  <span className="bg-[#c5e063] text-black text-[9px] font-bold uppercase tracking-wider rounded-full px-1.5 py-0.5">AI</span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
                     )}
 
                     {(w.workoutType === "floorball" || w.workoutType === "running") && (
-                      <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm pt-2">
                         {w.avgHr && (
-                          <div>
-                            <span className="text-slate-500">Śr. tętno:</span>{" "}
-                            {w.avgHr} bpm
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">Śr. tętno</span>
+                            <span className="text-white font-medium">{w.avgHr} bpm</span>
                           </div>
                         )}
                         {w.maxHr && (
-                          <div>
-                            <span className="text-slate-500">Max tętno:</span>{" "}
-                            {w.maxHr} bpm
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">Max tętno</span>
+                            <span className="text-white font-medium">{w.maxHr} bpm</span>
                           </div>
                         )}
                         {w.avgPace && (
-                          <div>
-                            <span className="text-slate-500">Tempo:</span>{" "}
-                            {w.avgPace} /km
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">Tempo</span>
+                            <span className="text-white font-medium">{w.avgPace} /km</span>
                           </div>
                         )}
                         {w.cadence && (
-                          <div>
-                            <span className="text-slate-500">Kadencja:</span>{" "}
-                            {w.cadence}
+                          <div className="flex flex-col">
+                            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">Kadencja</span>
+                            <span className="text-white font-medium">{w.cadence}</span>
                           </div>
                         )}
                       </div>

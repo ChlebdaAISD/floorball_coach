@@ -8,16 +8,25 @@
   --color-floorball: #22c55e;
   --color-running: #f97316;
   --color-rest: #94a3b8;
+  --color-cta: #6b7cff;
+  --color-cream: #f0ede8;
+  --color-accent: #c5e063;
+  --color-card: #111111;
 }
 
 /* Safe area for mobile bottom nav */
 html {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  background-color: #000000;
+  color: #ffffff;
 }
 
 /* Prevent overscroll bounce on mobile */
 body {
   overscroll-behavior: none;
+  background-color: #000000;
+  color: #ffffff;
+  font-family: var(--font-sans);
 }
 
 /* Big touch targets for gym use */

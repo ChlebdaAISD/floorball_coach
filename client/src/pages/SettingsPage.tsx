@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/utils";
-import { User, Settings, Save, Loader2, ArrowLeft } from "lucide-react";
+import { ArrowLeft, Settings, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 
 interface UserProfile {
     id: number;
@@ -67,120 +70,120 @@ export default function SettingsPage() {
 
     if (isLoading) {
         return (
-            <div className="flex h-screen items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+            <div className="flex h-[100dvh] items-center justify-center bg-black">
+                <Loader2 size={20} strokeWidth={1} className="animate-spin text-white/40" />
             </div>
         );
     }
 
     return (
-        <div className="flex-1 overflow-y-auto bg-slate-950 px-4 py-6 text-slate-200">
-            <div className="mb-6 flex items-center gap-3">
-                <button onClick={() => setLocation("/")} className="text-slate-400 hover:text-white">
-                    <ArrowLeft className="h-6 w-6" />
+        <div className="flex-1 overflow-y-auto bg-black px-6 py-8 text-white min-h-[100dvh]">
+            <div className="mb-10 flex items-center justify-between">
+                <button onClick={() => setLocation("/")} className="text-white/50 hover:text-white transition-colors">
+                    <ArrowLeft size={20} strokeWidth={1} />
                 </button>
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    <Settings className="h-6 w-6" /> Ustawienia Profilu
-                </h1>
+                <div className="text-white/30">
+                    <Settings size={20} strokeWidth={1} />
+                </div>
             </div>
 
-            <p className="text-sm text-slate-400 mb-6">
-                Informacje tutaj posłużą Twojemu trenerowi AI żeby lepiej dopasować plany treningowe do Twoich potrzeb i celów.
-            </p>
+            <div className="mb-10">
+                <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Konfiguracja</p>
+                <h1 className="text-2xl font-semibold mb-3">Profil</h1>
+                <p className="text-sm text-white/30 font-light leading-relaxed">
+                    Informacje tutaj posłużą Twojemu trenerowi AI żeby lepiej dopasować plany treningowe do Twoich potrzeb i celów.
+                </p>
+            </div>
 
-            <div className="space-y-6">
-                <div className="rounded-xl bg-slate-900 justify-between">
-                    <div className="p-4 border-b border-slate-800">
-                        <h2 className="text-lg font-bold flex items-center gap-2">
-                            <User className="h-5 w-5 text-blue-400" /> Ogólne
-                        </h2>
-                    </div>
-                    <div className="p-4 space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">O Tobie (Bio)</label>
-                            <textarea
+            <div className="space-y-12">
+                <div className="space-y-6">
+                    <h2 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase">Ogólne</h2>
+                    <div className="space-y-5">
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">O Tobie (Bio)</label>
+                            <Textarea
                                 value={form.bio}
                                 onChange={(e) => handleChange("bio", e.target.value)}
-                                placeholder="Napisz kilka słów o sobie, swoich doświadczeniach i stylu życia..."
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-blue-500 min-h-[100px]"
+                                placeholder="Napisz kilka słów o sobie..."
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Główny Cel Treningowy</label>
-                            <input
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Główny Cel Treningowy</label>
+                            <Input
                                 type="text"
                                 value={form.trainingGoal}
                                 onChange={(e) => handleChange("trainingGoal", e.target.value)}
-                                placeholder="Np. Poprawa wydolności, start w maratonie, zrzucenie 5kg..."
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-blue-500"
+                                placeholder="Np. Poprawa wydolności..."
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Odpowiedzi z Wywiadu</label>
-                            <textarea
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Odpowiedzi z Wywiadu</label>
+                            <Textarea
                                 value={form.interviewAnswers}
                                 onChange={(e) => handleChange("interviewAnswers", e.target.value)}
-                                placeholder="Możesz tu skopiować odpowiedz z formularza startowego..."
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-blue-500 min-h-[120px]"
+                                placeholder="Możesz tu skopiować odpowiedź z formularza..."
                             />
                         </div>
                     </div>
                 </div>
 
-                <div className="rounded-xl bg-slate-900 justify-between">
-                    <div className="p-4 border-b border-slate-800">
-                        <h2 className="text-lg font-bold">Terminarz Sezonu</h2>
-                    </div>
-                    <div className="p-4 grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Początek sezonu</label>
-                            <input
+                <div className="h-px bg-white/[0.08] w-full" />
+
+                <div className="space-y-6 pb-32">
+                    <h2 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase">Terminarz Sezonu</h2>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Początek sezonu</label>
+                            <Input
                                 type="date"
                                 value={form.seasonStart}
                                 onChange={(e) => handleChange("seasonStart", e.target.value)}
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                className="px-3 text-sm [color-scheme:dark]"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Koniec sezonu</label>
-                            <input
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Koniec sezonu</label>
+                            <Input
                                 type="date"
                                 value={form.seasonEnd}
                                 onChange={(e) => handleChange("seasonEnd", e.target.value)}
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                className="px-3 text-sm [color-scheme:dark]"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Początek Off-season</label>
-                            <input
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Początek Off-season</label>
+                            <Input
                                 type="date"
                                 value={form.offSeasonStart}
                                 onChange={(e) => handleChange("offSeasonStart", e.target.value)}
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                className="px-3 text-sm [color-scheme:dark]"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-1">Koniec Off-season</label>
-                            <input
+                        <div className="space-y-2">
+                            <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Koniec Off-season</label>
+                            <Input
                                 type="date"
                                 value={form.offSeasonEnd}
                                 onChange={(e) => handleChange("offSeasonEnd", e.target.value)}
-                                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                className="px-3 text-sm [color-scheme:dark]"
                             />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <button
-                onClick={() => mutation.mutate(form)}
-                disabled={mutation.isPending}
-                className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-semibold text-white disabled:opacity-50"
-            >
-                {mutation.isPending ? "Zapisywanie..." : <><Save className="h-5 w-5" /> Zapisz Profil</>}
-            </button>
+            <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black via-black/90 to-transparent pt-12 pb-safe z-10">
+                <Button
+                    variant="primary"
+                    onClick={() => mutation.mutate(form)}
+                    disabled={mutation.isPending}
+                    className="w-full"
+                >
+                    {mutation.isPending ? "Zapisywanie..." : "Zapisz Profil"}
+                </Button>
+            </div>
         </div>
     );
 }

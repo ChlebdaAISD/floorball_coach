@@ -5,6 +5,7 @@ import { cn, apiRequest } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { ChatMessage } from "@shared/schema";
+import { Button } from "@/components/ui/Button";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -45,7 +46,6 @@ export default function ChatPage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["chat"] });
-      // Invalidate calendar in case AI made changes
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
   });
@@ -71,25 +71,24 @@ export default function ChatPage() {
   });
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col">
+    <div className="flex h-[100dvh] flex-col bg-black text-white">
       {/* Header */}
-      <div className="border-b border-slate-800 px-4 py-3">
-        <h1 className="text-lg font-bold">Trener AI</h1>
-        <p className="text-xs text-slate-500">
-          Rozmawiaj o treningach, kontuzjach, samopoczuciu
-        </p>
+      <div className="px-6 py-5 mt-2 sticky top-0 z-10 bg-black/90 backdrop-blur-xl border-b border-white/[0.06]">
+        <h1 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Trener AI</h1>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none pb-[120px]">
         {messages.length === 0 && !sendMutation.isPending && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Bot className="mb-3 h-10 w-10 text-blue-400/50" />
-            <p className="text-sm text-slate-500">
-              Cześć! Jestem Twoim trenerem AI. Opowiedz mi jak się czujesz,
-              zapytaj o plan treningowy, lub zgłoś kontuzję.
+          <div className="flex h-full flex-col items-center justify-center text-center px-4">
+            <div className="mb-6 h-16 w-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+              <Bot size={28} strokeWidth={1} className="text-white/60" />
+            </div>
+            <h2 className="text-xl font-semibold mb-3 tracking-wide">O co chcesz zapytać?</h2>
+            <p className="text-sm text-white/30 font-light max-w-[240px] mb-10">
+              Opowiedz mi jak się czujesz, zapytaj o plan treningowy lub zgłoś kontuzję.
             </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <div className="flex flex-col w-full gap-3">
               {[
                 "Jak wygląda mój plan na ten tydzień?",
                 "Boli mnie kolano po treningu",
@@ -98,7 +97,7 @@ export default function ChatPage() {
                 <button
                   key={suggestion}
                   onClick={() => { sendMutation.mutate(suggestion); }}
-                  className="rounded-full bg-slate-800 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 transition"
+                  className="rounded-2xl border border-white/[0.12] bg-[#111111] p-4 text-sm text-white/50 text-left font-light transition-colors hover:border-white/25 hover:text-white"
                 >
                   {suggestion}
                 </button>
@@ -107,7 +106,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           {messages.map((msg) => (
             <MessageBubble
               key={msg.id}
@@ -117,23 +116,23 @@ export default function ChatPage() {
           ))}
 
           {sendMutation.isPending && (
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20">
-                <Bot className="h-4 w-4 text-blue-400" />
+            <div className="flex items-end gap-3 mt-4">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10">
+                <Bot size={16} strokeWidth={1} className="text-white/50" />
               </div>
-              <div className="flex items-center gap-2 rounded-2xl bg-slate-800 px-4 py-3 text-sm text-slate-300">
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+              <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-[#111111] border border-white/[0.1] px-5 py-3 text-sm text-white/40 font-light">
+                <Loader2 size={14} strokeWidth={1} className="animate-spin text-white/30" />
                 <span className="animate-pulse">Analizuje...</span>
               </div>
             </div>
           )}
         </div>
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-8" />
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-800 px-4 py-3">
-        <div className="flex items-end gap-2">
+      <div className="fixed bottom-[88px] sm:bottom-0 left-0 right-0 border-t border-white/[0.06] bg-black/90 backdrop-blur-xl px-4 py-4 pb-safe z-20">
+        <div className="flex items-end gap-2 max-w-lg mx-auto w-full">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -145,14 +144,15 @@ export default function ChatPage() {
             }}
             placeholder="Napisz do trenera..."
             rows={1}
-            className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm placeholder:text-slate-600 focus:border-blue-500 focus:outline-none"
+            style={{ minHeight: '44px', maxHeight: '120px' }}
+            className="flex-1 resize-none rounded-[22px] border border-white/[0.15] bg-[#111111] px-5 py-3 text-sm placeholder:text-white/20 font-light focus:border-white/30 focus:outline-none transition-colors w-full"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || sendMutation.isPending}
-            className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50 disabled:hover:bg-blue-600"
+            className="flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-[#6b7cff] text-white transition-all disabled:opacity-40 disabled:scale-95 active:scale-95 hover:bg-[#5a6bf0]"
           >
-            <Send className="h-4 w-4" />
+            <Send size={16} strokeWidth={1} className="ml-0.5" />
           </button>
         </div>
       </div>
@@ -174,82 +174,72 @@ function MessageBubble({
 
   return (
     <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
-      <div className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
-        <div
-          className={cn(
-            "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
-            isUser ? "bg-slate-700" : "bg-blue-500/20",
-          )}
-        >
-          {isUser ? (
-            <User className="h-4 w-4 text-slate-300" />
-          ) : (
-            <Bot className="h-4 w-4 text-blue-400" />
-          )}
-        </div>
+      <div className={cn("flex items-end gap-2 w-full max-w-[90%]", isUser ? "flex-row-reverse" : "flex-row")}>
+        {!isUser && (
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10 mb-1">
+            <Bot size={16} strokeWidth={1} className="text-white/50" />
+          </div>
+        )}
 
-        <div className={cn("max-w-[85%]", isUser && "text-right")}>
+        <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
           <div
             className={cn(
-              "inline-block rounded-2xl px-4 py-3 text-sm shadow-sm",
+              "px-5 py-3.5 text-sm font-light leading-relaxed",
               isUser
-                ? "bg-blue-600 text-white"
-                : "bg-slate-800 text-slate-200 border border-slate-700/50",
+                ? "bg-[#f0ede8] text-black rounded-2xl rounded-br-sm inline-block"
+                : "bg-[#111111] border border-white/[0.1] text-white/80 rounded-2xl rounded-bl-sm",
             )}
           >
             <p className="whitespace-pre-wrap">{message.content}</p>
 
             {!isUser && suggestion && !isApplied && (
-              <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                  Sugerowane zmiany w kalendarzu:
+              <div className="mt-5 space-y-3 border-t border-white/[0.08] pt-4">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                  Sugerowane zmiany na ten tydzień
                 </p>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {(suggestion.changes || []).map((c: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                    <div key={i} className="flex items-start gap-3 bg-black/40 border border-white/[0.08] p-3 rounded-xl">
                       <div className={cn(
-                        "mt-1 h-1.5 w-1.5 rounded-full flex-shrink-0",
-                        c.action === "cancel" ? "bg-red-500" : c.action === "add" ? "bg-green-500" : "bg-blue-500"
+                        "mt-[3px] h-2 w-2 rounded-full flex-shrink-0 ring-4",
+                        c.action === "cancel" ? "bg-red-400 ring-red-400/20" : c.action === "add" ? "bg-[#c5e063] ring-[#c5e063]/20" : "bg-white/40 ring-white/10"
                       )} />
-                      <span>
-                        <span className="font-bold">
-                          {c.action === "cancel" ? "Odwołaj" : c.action === "add" ? "Dodaj" : "Zmień"}:
-                        </span>{" "}
-                        {c.title || c.date} {c.reason && <span className="text-slate-500 italic"> — {c.reason}</span>}
-                      </span>
+                      <div className="flex flex-col gap-0.5 mt-[-2px]">
+                        <span className="text-xs font-medium text-white">
+                          {c.action === "cancel" ? "Odwołaj" : c.action === "add" ? "Dodaj" : "Zmień"}: {c.title || c.date}
+                        </span>
+                        {c.reason && <span className="text-[10px] text-white/30 leading-snug">{c.reason}</span>}
+                      </div>
                     </div>
                   ))}
                 </div>
-                <div className="flex gap-2 pt-1">
-                  <button
+                <div className="flex gap-2 pt-2">
+                  <Button
                     onClick={() => {
                       onApply(suggestion);
                       setIsApplied(true);
                     }}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-500 transition-colors"
+                    className="flex-1 py-4 text-xs font-semibold rounded-full"
                   >
-                    <Check className="h-3.5 w-3.5" /> Akceptuj
-                  </button>
-                  <button
+                    <Check size={14} strokeWidth={1} className="mr-1.5" /> Akceptuj
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => setIsApplied(true)}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-700 py-2 text-xs font-bold text-slate-300 hover:bg-slate-600 transition-colors"
+                    className="flex-1 py-4 text-xs font-semibold rounded-full"
                   >
-                    <X className="h-3.5 w-3.5" /> Odrzuć
-                  </button>
+                    <X size={14} strokeWidth={1} className="mr-1.5" /> Odrzuć
+                  </Button>
                 </div>
               </div>
             )}
 
             {isApplied && !isUser && suggestion && (
-              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-500 italic">
-                <Check className="h-3 w-3" /> Sugestia przetworzona
+              <div className="mt-4 flex items-center gap-1.5 rounded-xl bg-white/5 border border-white/[0.08] px-3 py-2 text-[10px] text-white/30 font-medium">
+                <Check size={12} strokeWidth={1} className="text-[#c5e063]" /> Zmiany zostały zastosowane
               </div>
             )}
           </div>
-
-          <p className="mt-1 text-[10px] text-slate-600">
-            {format(new Date(message.createdAt), "HH:mm", { locale: pl })}
-          </p>
         </div>
       </div>
     </div>

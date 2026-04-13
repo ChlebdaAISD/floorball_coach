@@ -34,7 +34,7 @@ export default function TodayPage() {
   if (isLoadingEvents || isLoadingReadiness) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+        <Loader2 className="h-5 w-5 animate-spin text-white/40" strokeWidth={1} />
       </div>
     );
   }
@@ -42,12 +42,12 @@ export default function TodayPage() {
   if (step === "done") {
     return (
       <div className="flex flex-col items-center justify-center px-4 pt-20">
-        <CheckCircle2 className="mb-4 h-16 w-16 text-green-400" />
-        <h2 className="mb-2 text-xl font-bold">Trening zapisany!</h2>
-        <p className="text-slate-400">Dobra robota. Odpoczywaj.</p>
+        <CheckCircle2 className="mb-4 h-16 w-16 text-[#c5e063]" strokeWidth={1} />
+        <h2 className="mb-2 text-xl font-semibold tracking-wide">Trening zapisany</h2>
+        <p className="text-white/40 text-sm tracking-wide">Dobra robota. Odpoczywaj.</p>
         <button
           onClick={() => { setStep("events"); setSelectedEvent(null); setAiAnalysis(null); }}
-          className="mt-6 rounded-xl bg-slate-800 px-6 py-3 font-semibold"
+          className="mt-8 rounded-full border border-white/20 px-8 py-3 text-sm font-semibold tracking-wide hover:border-white/40 transition-colors"
         >
           Powrót
         </button>
@@ -55,7 +55,6 @@ export default function TodayPage() {
     );
   }
 
-  // Legacy step compatibility - skip readiness directly to workout, since the Readiness form is now on the main dashboard
   if (step === "readiness" && selectedEvent) {
     setStep("workout");
     return null;
@@ -76,51 +75,58 @@ export default function TodayPage() {
 
   // Step: events (default)
   return (
-    <div className="p-4">
-      <h1 className="mb-1 text-xl font-bold">
-        {format(new Date(), "EEEE, d MMMM", { locale: pl })}
-      </h1>
-      <p className="mb-6 text-sm text-slate-400">Co dziś robimy?</p>
+    <div className="p-4 space-y-6">
+      <div>
+        <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">
+          {format(new Date(), "EEEE", { locale: pl })}
+        </p>
+        <h1 className="text-2xl font-semibold">
+          {format(new Date(), "d MMMM", { locale: pl })}
+        </h1>
+      </div>
 
       {todayEvents.length === 0 ? (
-        <div className="rounded-xl bg-slate-900 p-6 text-center">
-          <p className="text-slate-400">Brak zaplanowanych treningów na dziś</p>
-          <p className="mt-2 text-sm text-slate-600">
+        <div className="rounded-2xl bg-[#111111] border border-white/[0.12] p-6 text-center">
+          <p className="text-white/40 text-sm">Brak zaplanowanych treningów na dziś</p>
+          <p className="mt-2 text-xs text-white/20">
             Dodaj trening w kalendarzu lub porozmawiaj z trenerem AI
           </p>
         </div>
       ) : (
         <div className="space-y-3">
+          <p className="text-[11px] uppercase tracking-widest text-white/40">Dziś</p>
           {todayEvents.map((event) => (
             <button
               key={event.id}
               onClick={() => { setSelectedEvent(event); setStep("readiness"); }}
-              className="flex w-full items-center gap-4 rounded-xl bg-slate-900 p-4 text-left transition-colors hover:bg-slate-800"
+              className="flex w-full items-center gap-4 rounded-2xl bg-[#111111] border border-white/[0.12] p-4 text-left transition-colors hover:border-white/25"
             >
-              <div className={cn("flex h-12 w-12 items-center justify-center rounded-xl", EVENT_COLORS[event.eventType]?.replace("bg-", "bg-") + "/20")}>
-                {event.eventType === "gym" && <Dumbbell className="h-6 w-6 text-blue-400" />}
-                {event.eventType.startsWith("floorball") && <Target className="h-6 w-6 text-green-400" />}
-                {event.eventType === "running" && <Footprints className="h-6 w-6 text-orange-400" />}
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5">
+                {event.eventType === "gym" && <Dumbbell className="h-5 w-5 text-white/60" strokeWidth={1} />}
+                {event.eventType.startsWith("floorball") && <Target className="h-5 w-5 text-white/60" strokeWidth={1} />}
+                {event.eventType === "running" && <Footprints className="h-5 w-5 text-white/60" strokeWidth={1} />}
               </div>
               <div className="flex-1">
-                <p className="font-semibold">{event.title}</p>
-                <p className="text-sm text-slate-400">
+                <p className="font-semibold text-sm">{event.title}</p>
+                <p className="text-xs text-white/40 mt-0.5">
                   {event.time && `${event.time} · `}
                   {EVENT_LABELS[event.eventType]}
                 </p>
               </div>
-              <span className="text-sm text-blue-400">Rozpocznij →</span>
+              <span className="text-xs text-white/40 tracking-wide">Rozpocznij →</span>
             </button>
           ))}
         </div>
       )}
 
-      <h2 className="mt-8 mb-4 text-xl font-bold">Samopoczucie</h2>
-      <div className="rounded-xl bg-slate-900 p-4">
-        <ReadinessForm
-          initialData={todayReadiness}
-          onComplete={() => refetchReadiness()}
-        />
+      <div>
+        <p className="text-[11px] uppercase tracking-widest text-white/40 mb-3">Samopoczucie</p>
+        <div className="rounded-2xl bg-[#111111] border border-white/[0.12] p-4">
+          <ReadinessForm
+            initialData={todayReadiness}
+            onComplete={() => refetchReadiness()}
+          />
+        </div>
       </div>
     </div>
   );
@@ -182,7 +188,7 @@ function ReadinessForm({
         <SliderField label="Wynik snu" value={form.sleepScore} min={0} disabled={!isEditing} max={100} onChange={(v) => update("sleepScore", v)} />
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">Status HRV</label>
+          <label className="mb-2 block text-[11px] font-semibold uppercase tracking-widest text-white/40">Status HRV</label>
           <div className="flex gap-2">
             {["low", "balanced", "high"].map((status) => (
               <button
@@ -190,10 +196,10 @@ function ReadinessForm({
                 disabled={!isEditing}
                 onClick={() => update("hrvStatus", status)}
                 className={cn(
-                  "flex-1 rounded-lg py-2.5 text-sm font-medium transition-colors disabled:opacity-75 disabled:cursor-not-allowed",
+                  "flex-1 rounded-full py-2.5 text-xs font-semibold tracking-wide transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                   form.hrvStatus === status
-                    ? status === "low" ? "bg-red-600 text-white" : status === "balanced" ? "bg-yellow-600 text-white" : "bg-green-600 text-white"
-                    : "bg-slate-800 text-slate-400",
+                    ? status === "low" ? "bg-red-500/80 text-white" : status === "balanced" ? "bg-white/90 text-black" : "bg-[#c5e063] text-black"
+                    : "border border-white/15 bg-transparent text-white/40",
                 )}
               >
                 {status === "low" ? "Niski" : status === "balanced" ? "Zrównoważony" : "Wysoki"}
@@ -207,9 +213,9 @@ function ReadinessForm({
       </div>
 
       {form.painLevel >= 7 && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg bg-red-500/10 p-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
-          <p className="text-sm text-red-300">
+        <div className="mt-4 flex items-start gap-2 rounded-2xl bg-red-500/10 border border-red-500/20 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" strokeWidth={1} />
+          <p className="text-sm text-red-300 font-light">
             Wysoki poziom bólu — uważaj podczas treningu
           </p>
         </div>
@@ -219,19 +225,15 @@ function ReadinessForm({
         {!isEditing ? (
           <button
             onClick={() => setIsEditing(true)}
-            className="w-full rounded-xl bg-slate-700 py-3 font-semibold text-white hover:bg-slate-600 transition-colors"
+            className="w-full rounded-full border border-white/20 py-3 text-sm font-semibold text-white hover:border-white/40 transition-colors"
           >
             Edytuj
           </button>
         ) : (
           <button
-            onClick={() =>
-              mutation.mutate({
-                ...form,
-              })
-            }
+            onClick={() => mutation.mutate({ ...form })}
             disabled={mutation.isPending}
-            className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white disabled:opacity-50"
+            className="w-full rounded-full bg-[#6b7cff] py-3 text-sm font-semibold text-white disabled:opacity-50 transition-colors hover:bg-[#5a6bf0]"
           >
             {mutation.isPending ? "Zapisuję..." : "Zapisz gotowość na dziś"}
           </button>
@@ -261,10 +263,10 @@ function SliderField({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <label className="text-sm font-medium text-slate-300">{label}</label>
+        <label className="text-[11px] font-semibold uppercase tracking-widest text-white/40">{label}</label>
         <span className={cn(
-          "text-sm font-bold",
-          color === "red" ? "text-red-400" : color === "yellow" ? "text-yellow-400" : color === "green" ? "text-green-400" : "text-blue-400",
+          "text-sm font-semibold",
+          color === "red" ? "text-red-400" : color === "yellow" ? "text-yellow-400" : "text-white",
         )}>{value}</span>
       </div>
       <input
@@ -274,7 +276,7 @@ function SliderField({
         disabled={disabled}
         value={value}
         onChange={(e) => onChange(parseInt(e.target.value))}
-        className={cn("w-full accent-blue-500", disabled && "opacity-50 cursor-not-allowed")}
+        className={cn("w-full accent-white", disabled && "opacity-30 cursor-not-allowed")}
       />
     </div>
   );
@@ -311,7 +313,7 @@ function GymWorkout({
   if (!gymPlan) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+        <Loader2 className="h-5 w-5 animate-spin text-white/40" strokeWidth={1} />
       </div>
     );
   }
@@ -347,11 +349,12 @@ function GymWorkout({
 
   return (
     <div className="p-4">
-      <h2 className="mb-1 text-lg font-bold">{gymPlan.day?.name || event.title}</h2>
+      <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Siłownia</p>
+      <h2 className="mb-4 text-xl font-semibold">{gymPlan.day?.name || event.title}</h2>
 
       {aiAnalysis?.summary && (
-        <div className="mb-4 rounded-lg bg-blue-500/10 p-3">
-          <p className="text-sm text-blue-300">🤖 {aiAnalysis.summary}</p>
+        <div className="mb-4 rounded-2xl bg-[#6b7cff]/10 border border-[#6b7cff]/20 p-3">
+          <p className="text-sm text-[#6b7cff]">🤖 {aiAnalysis.summary}</p>
         </div>
       )}
 
@@ -364,9 +367,9 @@ function GymWorkout({
             <div
               key={ex.id}
               className={cn(
-                "rounded-xl bg-slate-900 p-4",
+                "rounded-2xl bg-[#111111] border border-white/[0.12] p-4 transition-colors",
                 mod?.action === "remove" && "opacity-40",
-                state.completed && "ring-1 ring-green-500/30",
+                state.completed && "border-[#c5e063]/30",
               )}
             >
               <div className="flex items-start gap-3">
@@ -378,19 +381,19 @@ function GymWorkout({
                     }))
                   }
                   className={cn(
-                    "mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border transition-colors touch-target",
+                    "mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border transition-colors touch-target",
                     state.completed
-                      ? "border-green-500 bg-green-500 text-white"
-                      : "border-slate-600",
+                      ? "border-[#c5e063] bg-[#c5e063] text-black"
+                      : "border-white/20",
                   )}
                 >
-                  {state.completed && <CheckCircle2 className="h-4 w-4" />}
+                  {state.completed && <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />}
                 </button>
                 <div className="flex-1">
-                  <p className={cn("font-medium", state.completed && "text-green-400")}>
+                  <p className={cn("font-medium text-sm", state.completed && "text-[#c5e063]")}>
                     {ex.exerciseName}
                   </p>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-xs text-white/40 mt-0.5">
                     {mod ? (
                       <span className="text-yellow-400">
                         {mod.new_sets || ex.sets}×{mod.new_reps || ex.reps}
@@ -408,7 +411,7 @@ function GymWorkout({
                   {mod?.reason && (
                     <p className="mt-1 text-xs text-yellow-400/70">AI: {mod.reason}</p>
                   )}
-                  {ex.notes && <p className="mt-1 text-xs text-slate-500">{ex.notes}</p>}
+                  {ex.notes && <p className="mt-1 text-xs text-white/20">{ex.notes}</p>}
                 </div>
               </div>
               <input
@@ -421,14 +424,13 @@ function GymWorkout({
                   }))
                 }
                 placeholder="Notatki..."
-                className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600"
+                className="mt-3 w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25"
               />
             </div>
           );
         })}
       </div>
 
-      {/* Post-workout */}
       <div className="mt-6 space-y-4">
         <SliderField label="RPE (odczuwany wysiłek)" value={rpe} min={1} max={10} onChange={setRpe} />
         <textarea
@@ -436,12 +438,12 @@ function GymWorkout({
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notatki po treningu..."
           rows={2}
-          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600"
+          className="w-full rounded-2xl border border-white/[0.12] bg-[#111111] px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
         />
         <button
           onClick={handleSave}
           disabled={saveMutation.isPending}
-          className="w-full rounded-xl bg-green-600 py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-full bg-[#6b7cff] py-4 text-sm font-semibold text-white disabled:opacity-50 transition-colors hover:bg-[#5a6bf0]"
         >
           {saveMutation.isPending ? "Zapisuję..." : "Zakończ trening"}
         </button>
@@ -478,7 +480,8 @@ function FloorballLog({
 
   return (
     <div className="p-4">
-      <h2 className="mb-4 text-lg font-bold">{event.title}</h2>
+      <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Unihokej</p>
+      <h2 className="mb-4 text-xl font-semibold">{event.title}</h2>
 
       <div className="space-y-4">
         <div className="flex gap-2">
@@ -487,8 +490,10 @@ function FloorballLog({
               key={t}
               onClick={() => update("floorballType", t)}
               className={cn(
-                "flex-1 rounded-lg py-2.5 text-sm font-medium",
-                form.floorballType === t ? "bg-green-600 text-white" : "bg-slate-800 text-slate-400",
+                "flex-1 rounded-full py-2.5 text-sm font-semibold tracking-wide transition-colors",
+                form.floorballType === t
+                  ? "bg-[#c5e063] text-black"
+                  : "border border-white/20 text-white/50 hover:border-white/40",
               )}
             >
               {t === "training" ? "Trening" : "Mecz"}
@@ -508,7 +513,7 @@ function FloorballLog({
           onChange={(e) => update("notes", e.target.value)}
           placeholder="Notatki (samopoczucie, kontuzje...)"
           rows={3}
-          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600"
+          className="w-full rounded-2xl border border-white/[0.12] bg-[#111111] px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
         />
       </div>
 
@@ -523,7 +528,7 @@ function FloorballLog({
           })
         }
         disabled={saveMutation.isPending}
-        className="mt-6 w-full rounded-xl bg-green-600 py-3 font-semibold text-white disabled:opacity-50"
+        className="mt-6 w-full rounded-full bg-[#6b7cff] py-4 text-sm font-semibold text-white disabled:opacity-50 transition-colors hover:bg-[#5a6bf0]"
       >
         {saveMutation.isPending ? "Zapisuję..." : "Zapisz trening"}
       </button>
@@ -562,7 +567,8 @@ function RunningLog({
 
   return (
     <div className="p-4">
-      <h2 className="mb-4 text-lg font-bold">{event.title || "Bieg"}</h2>
+      <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Bieg</p>
+      <h2 className="mb-4 text-xl font-semibold">{event.title || "Bieg"}</h2>
 
       <div className="space-y-4">
         <div className="flex gap-3">
@@ -570,13 +576,13 @@ function RunningLog({
           <NumberField label="Czas (min)" value={form.durationMinutes} onChange={(v) => update("durationMinutes", v)} />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-slate-300">Śr. tempo (min/km)</label>
+          <label className="mb-2 block text-[11px] uppercase tracking-widest text-white/40">Śr. tempo (min/km)</label>
           <input
             type="text"
             value={form.avgPace}
             onChange={(e) => update("avgPace", e.target.value)}
             placeholder="6:00"
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm"
+            className="w-full rounded-2xl border border-white/[0.15] bg-[#111111] px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/30"
           />
         </div>
         <div className="flex gap-3">
@@ -594,7 +600,7 @@ function RunningLog({
           onChange={(e) => update("notes", e.target.value)}
           placeholder="Notatki..."
           rows={2}
-          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm placeholder:text-slate-600"
+          className="w-full rounded-2xl border border-white/[0.12] bg-[#111111] px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
         />
       </div>
 
@@ -609,7 +615,7 @@ function RunningLog({
           })
         }
         disabled={saveMutation.isPending}
-        className="mt-6 w-full rounded-xl bg-green-600 py-3 font-semibold text-white disabled:opacity-50"
+        className="mt-6 w-full rounded-full bg-[#6b7cff] py-4 text-sm font-semibold text-white disabled:opacity-50 transition-colors hover:bg-[#5a6bf0]"
       >
         {saveMutation.isPending ? "Zapisuję..." : "Zapisz bieg"}
       </button>
@@ -630,13 +636,13 @@ function NumberField({
 }) {
   return (
     <div className="flex-1">
-      <label className="mb-1 block text-sm text-slate-300">{label}</label>
+      <label className="mb-2 block text-[11px] uppercase tracking-widest text-white/40">{label}</label>
       <input
         type="number"
         value={value}
         step={step}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm"
+        className="w-full rounded-2xl border border-white/[0.15] bg-[#111111] px-4 py-3 text-sm focus:outline-none focus:border-white/30"
       />
     </div>
   );
