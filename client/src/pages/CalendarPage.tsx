@@ -38,8 +38,9 @@ export default function CalendarPage() {
 
   const range = useMemo(() => {
     if (viewMode === "week") {
-      const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-      const end = endOfWeek(currentDate, { weekStartsOn: 1 });
+      // Rolling view: yesterday to next 6 days
+      const start = addDays(currentDate, -1);
+      const end = addDays(currentDate, 6);
       return { start, end };
     }
     const start = startOfMonth(currentDate);

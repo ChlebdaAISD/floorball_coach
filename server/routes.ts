@@ -228,6 +228,7 @@ export function registerRoutes(app: Express) {
         and(
           gte(calendarEvents.date, from),
           lte(calendarEvents.date, to),
+          sql`${calendarEvents.status} != 'cancelled'`
         ),
       )
       .orderBy(calendarEvents.date);
