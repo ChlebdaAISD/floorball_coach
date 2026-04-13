@@ -128,7 +128,7 @@ export async function chatWithCoach(
   userMessage: string,
 ): Promise<{ text: string; planSuggestion?: unknown }> {
   const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({ model: "gemini-3.0-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
   const context = await buildContext();
 
@@ -204,7 +204,7 @@ export async function analyzeReadiness(
   calendarEventId: number,
 ): Promise<{ summary: string; modifications: unknown[] }> {
   const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({ model: "gemini-3.0-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
   // Get the gym plan for this event
   const [event] = await db
