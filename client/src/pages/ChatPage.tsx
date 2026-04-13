@@ -59,6 +59,17 @@ export default function ChatPage() {
     sendMutation.mutate(input.trim());
   };
 
+  const applyMutation = useMutation({
+    mutationFn: (suggestion: any) =>
+      apiRequest("/api/calendar/apply-suggestion", {
+        method: "POST",
+        body: JSON.stringify(suggestion),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    },
+  });
+
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col">
       {/* Header */}
@@ -101,6 +112,7 @@ export default function ChatPage() {
             <MessageBubble
               key={msg.id}
               message={msg}
+              onApply={(s) => applyMutation.mutate(s)}
             />
           ))}
 
@@ -148,37 +160,97 @@ export default function ChatPage() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  onApply,
+}: {
+  message: ChatMessage;
+  onApply: (suggestion: any) => void;
+}) {
   const isUser = message.role === "user";
+  const [isApplied, setIsApplied] = useState(false);
+
+  const suggestion = message.planSuggestion as any;
 
   return (
-    <div className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
-      <div
-        className={cn(
-          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
-          isUser ? "bg-slate-700" : "bg-blue-500/20",
-        )}
-      >
-        {isUser ? (
-          <User className="h-4 w-4 text-slate-300" />
-        ) : (
-          <Bot className="h-4 w-4 text-blue-400" />
-        )}
-      </div>
-
-      <div className={cn("max-w-[80%]", isUser && "text-right")}>
+    <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
+      <div className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
         <div
           className={cn(
-            "inline-block rounded-2xl px-4 py-3 text-sm",
-            isUser ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-200",
+            "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full",
+            isUser ? "bg-slate-700" : "bg-blue-500/20",
           )}
         >
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          {isUser ? (
+            <User className="h-4 w-4 text-slate-300" />
+          ) : (
+            <Bot className="h-4 w-4 text-blue-400" />
+          )}
         </div>
 
-        <p className="mt-1 text-xs text-slate-600">
-          {format(new Date(message.createdAt), "HH:mm", { locale: pl })}
-        </p>
+        <div className={cn("max-w-[85%]", isUser && "text-right")}>
+          <div
+            className={cn(
+              "inline-block rounded-2xl px-4 py-3 text-sm shadow-sm",
+              isUser
+                ? "bg-blue-600 text-white"
+                : "bg-slate-800 text-slate-200 border border-slate-700/50",
+            )}
+          >
+            <p className="whitespace-pre-wrap">{message.content}</p>
+
+            {!isUser && suggestion && !isApplied && (
+              <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Sugerowane zmiany w kalendarzu:
+                </p>
+                <div className="space-y-1.5">
+                  {(suggestion.changes || []).map((c: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <div className={cn(
+                        "mt-1 h-1.5 w-1.5 rounded-full flex-shrink-0",
+                        c.action === "cancel" ? "bg-red-500" : c.action === "add" ? "bg-green-500" : "bg-blue-500"
+                      )} />
+                      <span>
+                        <span className="font-bold">
+                          {c.action === "cancel" ? "Odwołaj" : c.action === "add" ? "Dodaj" : "Zmień"}:
+                        </span>{" "}
+                        {c.title || c.date} {c.reason && <span className="text-slate-500 italic"> — {c.reason}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => {
+                      onApply(suggestion);
+                      setIsApplied(true);
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-500 transition-colors"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Akceptuj
+                  </button>
+                  <button
+                    onClick={() => setIsApplied(true)}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-700 py-2 text-xs font-bold text-slate-300 hover:bg-slate-600 transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" /> Odrzuć
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {isApplied && !isUser && suggestion && (
+              <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-500 italic">
+                <Check className="h-3 w-3" /> Sugestia przetworzona
+              </div>
+            )}
+          </div>
+
+          <p className="mt-1 text-[10px] text-slate-600">
+            {format(new Date(message.createdAt), "HH:mm", { locale: pl })}
+          </p>
+        </div>
       </div>
     </div>
   );

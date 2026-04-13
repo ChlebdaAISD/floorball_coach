@@ -292,14 +292,16 @@ function DayDetail({
                   </p>
                 </div>
               </div>
-              {ev.source === "manual" && (
-                <button
-                  onClick={() => deleteMutation.mutate(ev.id)}
-                  className="text-slate-600 hover:text-red-400"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (confirm("Czy na pewno chcesz usunąć to wydarzenie?")) {
+                    deleteMutation.mutate(ev.id);
+                  }
+                }}
+                className="text-slate-600 hover:text-red-400"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ))}
         </div>

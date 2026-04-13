@@ -261,6 +261,49 @@ export function registerRoutes(app: Express) {
     res.status(204).end();
   });
 
+  app.post("/api/calendar/apply-suggestion", requireAuth, async (req, res) => {
+    const { changes } = req.body;
+    if (!changes || !Array.isArray(changes)) {
+      return res.status(400).json({ error: "Nieprawidłowy format zmian" });
+    }
+
+    try {
+      for (const change of changes) {
+        if (change.action === "cancel" && change.event_id) {
+          await db
+            .update(calendarEvents)
+            .set({ status: "cancelled" })
+            .where(eq(calendarEvents.id, change.event_id));
+        } else if (change.action === "add" && change.date) {
+          await db.insert(calendarEvents).values({
+            date: change.date,
+            time: change.time || null,
+            eventType: change.event_type || "rest",
+            title: change.title || "Dodane przez trenera",
+            description: change.reason,
+            source: "ai",
+          });
+        } else if (change.action === "modify" && change.event_id) {
+          const updates: Record<string, any> = {};
+          if (change.title) updates.title = change.title;
+          if (change.event_type) updates.eventType = change.event_type;
+          if (change.time !== undefined) updates.time = change.time;
+          if (change.date) updates.date = change.date;
+          if (Object.keys(updates).length > 0) {
+            await db
+              .update(calendarEvents)
+              .set(updates)
+              .where(eq(calendarEvents.id, change.event_id));
+          }
+        }
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Failed to apply suggestion:", err);
+      res.status(500).json({ error: "Błąd podczas wprowadzania zmian" });
+    }
+  });
+
   // ─── Today ───────────────────────────────────────────────
   app.get("/api/today/event", requireAuth, async (_req, res) => {
     const today = todayInWarsaw();
@@ -489,57 +532,13 @@ export function registerRoutes(app: Express) {
     try {
       const response = await chatWithCoach(content);
 
-      if (response.planSuggestion) {
-        const suggestion = response.planSuggestion as {
-          changes: Array<{
-            event_id?: number;
-            date?: string;
-            time?: string;
-            action: string;
-            event_type?: string;
-            title?: string;
-            reason?: string;
-          }>;
-        };
-
-        for (const change of suggestion.changes) {
-          if (change.action === "cancel" && change.event_id) {
-            await db
-              .update(calendarEvents)
-              .set({ status: "cancelled" })
-              .where(eq(calendarEvents.id, change.event_id));
-          } else if (change.action === "add" && change.date) {
-            await db.insert(calendarEvents).values({
-              date: change.date,
-              time: change.time || null,
-              eventType: change.event_type || "rest",
-              title: change.title || "Dodane przez trenera",
-              description: change.reason,
-              source: "ai",
-            });
-          } else if (change.action === "modify" && change.event_id) {
-            const updates: Record<string, unknown> = {};
-            if (change.title) updates.title = change.title;
-            if (change.event_type) updates.eventType = change.event_type;
-            if (change.time !== undefined) updates.time = change.time;
-            if (change.date) updates.date = change.date;
-            if (Object.keys(updates).length > 0) {
-              await db
-                .update(calendarEvents)
-                .set(updates)
-                .where(eq(calendarEvents.id, change.event_id));
-            }
-          }
-        }
-      }
-
-      // Save assistant message without planSuggestion so UI doesn't render buttons
+      // Save assistant message with planSuggestion
       const [saved] = await db
         .insert(chatMessages)
         .values({
           role: "assistant",
           content: response.text,
-          planSuggestion: null,
+          planSuggestion: response.planSuggestion || null,
         })
         .returning();
 
