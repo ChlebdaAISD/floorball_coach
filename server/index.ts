@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+app.set("trust proxy", 1);
 const PgSession = connectPgSimple(session);
 
 // Use standard pg Pool for sessions (Neon driver is incompatible with connect-pg-simple)
