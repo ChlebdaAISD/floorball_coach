@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-gym: #3b82f6;
+  --color-floorball: #22c55e;
+  --color-running: #f97316;
+  --color-rest: #94a3b8;
+}
+
+/* Safe area for mobile bottom nav */
+html {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent overscroll bounce on mobile */
+body {
+  overscroll-behavior: none;
+}
+
+/* Big touch targets for gym use */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+}
