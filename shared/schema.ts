@@ -123,6 +123,7 @@ export const calendarEvents = pgTable("calendar_events", {
   workoutLogId: integer("workout_log_id"),
   source: text("source").notNull().default("manual"), // manual | ai | recurring
   status: text("status").notNull().default("planned"), // planned | completed | skipped | cancelled
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

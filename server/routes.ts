@@ -313,7 +313,7 @@ export function registerRoutes(app: Express) {
       .where(
         and(
           eq(calendarEvents.date, today),
-          eq(calendarEvents.status, "planned"),
+          sql`${calendarEvents.status} != 'cancelled'`,
         ),
       );
     res.json(events);
@@ -384,7 +384,7 @@ export function registerRoutes(app: Express) {
 
   // ─── Workouts ────────────────────────────────────────────
   app.post("/api/workouts", requireAuth, async (req, res) => {
-    const { exerciseLogs: exLogs, ...workoutData } = req.body;
+    const { exerciseLogs: exLogs, eventNotes, ...workoutData } = req.body;
     const data: InsertWorkoutLog = workoutData;
 
     const [workout] = await db.insert(workoutLogs).values(data).returning();
@@ -412,11 +412,13 @@ export function registerRoutes(app: Express) {
       }
     }
 
-    // Update calendar event status
+    // Update calendar event status (and optional notes from client)
     if (data.calendarEventId) {
+      const eventUpdate: Record<string, any> = { status: "completed", workoutLogId: workout.id };
+      if (eventNotes !== undefined) eventUpdate.notes = eventNotes;
       await db
         .update(calendarEvents)
-        .set({ status: "completed", workoutLogId: workout.id })
+        .set(eventUpdate)
         .where(eq(calendarEvents.id, data.calendarEventId));
     }
 

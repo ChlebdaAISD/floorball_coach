@@ -13,7 +13,6 @@ import {
   MessageCircle,
   BarChart3,
   Clock,
-  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +28,7 @@ function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/85 backdrop-blur-2xl border-t border-white/[0.08] pb-[env(safe-area-inset-bottom)]">
+    <nav className="shrink-0 bg-black/85 backdrop-blur-2xl border-t border-white/[0.08] pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-stretch justify-around">
         {tabs.map((tab) => {
           const isActive =
@@ -73,24 +72,23 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen pb-20 pt-14">
-      {/* Top Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/90 backdrop-blur-xl border-b border-white/[0.06] px-4 flex items-center justify-between">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Prewencja i Forma</div>
-        <button onClick={() => window.location.href = "/ustawienia"} className="p-2 transition-colors text-white/50 hover:text-white/80">
-          <Settings size={20} strokeWidth={1} />
-        </button>
-      </header>
-
-      <Switch>
-        <Route path="/" component={TodayPage} />
-        <Route path="/kalendarz" component={CalendarPage} />
-        <Route path="/trener" component={ChatPage} />
-        <Route path="/statystyki" component={DashboardPage} />
-        <Route path="/historia" component={HistoryPage} />
-        <Route path="/ustawienia" component={SettingsPage} />
-      </Switch>
-      <BottomNav />
+    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+      <div
+        className="relative flex w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl"
+        style={{ height: "min(100vh, 900px)" }}
+      >
+        <div className="flex-1 overflow-y-auto">
+          <Switch>
+            <Route path="/" component={TodayPage} />
+            <Route path="/kalendarz" component={CalendarPage} />
+            <Route path="/trener" component={ChatPage} />
+            <Route path="/statystyki" component={DashboardPage} />
+            <Route path="/historia" component={HistoryPage} />
+            <Route path="/ustawienia" component={SettingsPage} />
+          </Switch>
+        </div>
+        <BottomNav />
+      </div>
     </div>
   );
 }
