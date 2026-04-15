@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import bcrypt from "bcrypt";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
 import {
   users,
   exercises,
@@ -387,17 +387,54 @@ export function registerRoutes(app: Express) {
     const { exerciseLogs: exLogs, eventNotes, ...workoutData } = req.body;
     const data: InsertWorkoutLog = workoutData;
 
-    const [workout] = await db.insert(workoutLogs).values(data).returning();
+    // Upsert: if a workout already exists for this calendar event, update it
+    let workout: typeof workoutLogs.$inferSelect;
+    if (data.calendarEventId) {
+      const [existing] = await db
+        .select()
+        .from(workoutLogs)
+        .where(eq(workoutLogs.calendarEventId, data.calendarEventId))
+        .limit(1);
 
-    // Save exercise logs for gym workouts
+      if (existing) {
+        // Update the existing record with new data
+        const { calendarEventId, ...updateFields } = data;
+        const [updated] = await db
+          .update(workoutLogs)
+          .set(updateFields)
+          .where(eq(workoutLogs.id, existing.id))
+          .returning();
+        workout = updated;
+
+        // Replace exercise logs
+        if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
+          await db.delete(exerciseLogs).where(eq(exerciseLogs.workoutLogId, workout.id));
+          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
+            ...ex,
+            workoutLogId: workout.id,
+          }));
+          await db.insert(exerciseLogs).values(logsToInsert);
+        }
+      } else {
+        // Insert new workout
+        const [inserted] = await db.insert(workoutLogs).values(data).returning();
+        workout = inserted;
+
+        if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
+          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
+            ...ex,
+            workoutLogId: workout.id,
+          }));
+          await db.insert(exerciseLogs).values(logsToInsert);
+        }
+      }
+    } else {
+      const [inserted] = await db.insert(workoutLogs).values(data).returning();
+      workout = inserted;
+    }
+
+    // Recalculate tonnage for gym workouts
     if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
-      const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
-        ...ex,
-        workoutLogId: workout.id,
-      }));
-      await db.insert(exerciseLogs).values(logsToInsert);
-
-      // Calculate tonnage
       let tonnage = 0;
       for (const ex of exLogs) {
         if (ex.completed && ex.plannedWeight && ex.plannedSets && ex.plannedReps) {
@@ -412,7 +449,7 @@ export function registerRoutes(app: Express) {
       }
     }
 
-    // Update calendar event status (and optional notes from client)
+    // Update calendar event status
     if (data.calendarEventId) {
       const eventUpdate: Record<string, any> = { status: "completed", workoutLogId: workout.id };
       if (eventNotes !== undefined) eventUpdate.notes = eventNotes;
@@ -422,7 +459,7 @@ export function registerRoutes(app: Express) {
         .where(eq(calendarEvents.id, data.calendarEventId));
     }
 
-    res.status(201).json(workout);
+    res.status(200).json(workout);
   });
 
   app.get("/api/workouts", requireAuth, async (req, res) => {
@@ -440,7 +477,43 @@ export function registerRoutes(app: Express) {
     }
 
     const workouts = await query;
-    res.json(workouts);
+
+    // Deduplicate by calendarEventId — keep the latest entry per event
+    const seen = new Set<number>();
+    const deduped = workouts.filter((w: any) => {
+      if (!w.calendarEventId) return true;
+      if (seen.has(w.calendarEventId)) return false;
+      seen.add(w.calendarEventId);
+      return true;
+    });
+
+    res.json(deduped);
+  });
+
+  // One-time cleanup: delete duplicate workouts (keep latest per calendarEventId)
+  app.delete("/api/workouts/cleanup-duplicates", requireAuth, async (req, res) => {
+    const all = await db
+      .select()
+      .from(workoutLogs)
+      .orderBy(desc(workoutLogs.id));
+
+    const seen = new Map<number, number>(); // calendarEventId → keep id
+    const toDelete: number[] = [];
+
+    for (const w of all) {
+      if (!w.calendarEventId) continue;
+      if (!seen.has(w.calendarEventId)) {
+        seen.set(w.calendarEventId, w.id); // keep the first (latest, desc order)
+      } else {
+        toDelete.push(w.id);
+      }
+    }
+
+    if (toDelete.length > 0) {
+      await db.delete(workoutLogs).where(inArray(workoutLogs.id, toDelete));
+    }
+
+    res.json({ deleted: toDelete.length, ids: toDelete });
   });
 
   app.get("/api/workouts/:id", requireAuth, async (req, res) => {

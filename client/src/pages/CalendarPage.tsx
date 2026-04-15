@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addDays,
+  subDays,
   startOfWeek,
   endOfWeek,
   startOfMonth,
@@ -23,11 +24,14 @@ import {
   X,
   Calendar,
   LayoutGrid,
+  Settings,
 } from "lucide-react";
 import { cn, apiRequest, EVENT_COLORS, EVENT_LABELS } from "@/lib/utils";
 import type { CalendarEvent } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { TopNav } from "@/components/TopNav";
+import { useSettings } from "@/contexts/SettingsContext";
 
 type ViewMode = "week" | "month";
 
@@ -36,6 +40,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const { openSettings } = useSettings();
   const queryClient = useQueryClient();
 
   const range = useMemo(() => {
@@ -83,47 +88,62 @@ export default function CalendarPage() {
     return events.filter((e) => e.date === dateStr);
   };
 
+  const handleCloseAll = () => {
+    setSelectedDate(null);
+    setShowForm(false);
+  };
+
   return (
-    <div className="flex flex-col flex-1 overflow-y-auto bg-black text-white px-6 py-8 min-h-[100dvh]">
-      {/* Header */}
-      <div className="mb-8 mt-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-wide">Kalendarz</h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setViewMode(viewMode === "week" ? "month" : "week")}
-            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-          >
-            {viewMode === "week"
-              ? <LayoutGrid size={18} strokeWidth={1} />
-              : <Calendar size={18} strokeWidth={1} />}
+    <div className="flex flex-col flex-1 bg-black text-white min-h-[100dvh]">
+      <TopNav
+        label="Plan treningowy"
+        title="Kalendarz"
+        right={
+          <>
+            <button
+              onClick={() => setViewMode(viewMode === "week" ? "month" : "week")}
+              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+            >
+              {viewMode === "week"
+                ? <LayoutGrid size={18} strokeWidth={1} />
+                : <Calendar size={18} strokeWidth={1} />}
+            </button>
+            <button
+              onClick={() => setSelectedDate(format(new Date(), "yyyy-MM-dd"))}
+              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+            >
+              <Plus size={18} strokeWidth={1} />
+            </button>
+            <button
+              onClick={openSettings}
+              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+            >
+              <Settings size={18} strokeWidth={1} />
+            </button>
+          </>
+        }
+      />
+
+      {/* Navigation row — sticky below TopNav */}
+      <div className="sticky top-[60px] z-10 bg-black px-4 pb-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => navigate(-1)} className="rounded-full border border-white/[0.12] bg-[#111111] p-2.5 hover:border-white/25 transition-colors">
+            <ChevronLeft size={18} strokeWidth={1} />
           </button>
-          <button
-            onClick={() => { setSelectedDate(format(new Date(), "yyyy-MM-dd")); setShowForm(true); }}
-            className="rounded-full bg-[#6b7cff] text-white p-3 hover:bg-[#5a6bf0] transition-colors"
-          >
-            <Plus size={18} strokeWidth={1} />
+          <span className="text-sm font-semibold capitalize tracking-widest text-white/60 uppercase">
+            {viewMode === "week"
+              ? `${format(range.start, "d MMM", { locale: pl })} – ${format(range.end, "d MMM yyyy", { locale: pl })}`
+              : format(currentDate, "LLLL yyyy", { locale: pl })}
+          </span>
+          <button onClick={() => navigate(1)} className="rounded-full border border-white/[0.12] bg-[#111111] p-2.5 hover:border-white/25 transition-colors">
+            <ChevronRight size={18} strokeWidth={1} />
           </button>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="mb-6 flex items-center justify-between px-1">
-        <button onClick={() => navigate(-1)} className="rounded-full border border-white/[0.12] bg-[#111111] p-2.5 hover:border-white/25 transition-colors">
-          <ChevronLeft size={18} strokeWidth={1} />
-        </button>
-        <span className="text-sm font-semibold capitalize tracking-widest text-white/60 uppercase">
-          {viewMode === "week"
-            ? `${format(range.start, "d MMM", { locale: pl })} – ${format(range.end, "d MMM yyyy", { locale: pl })}`
-            : format(currentDate, "LLLL yyyy", { locale: pl })}
-        </span>
-        <button onClick={() => navigate(1)} className="rounded-full border border-white/[0.12] bg-[#111111] p-2.5 hover:border-white/25 transition-colors">
-          <ChevronRight size={18} strokeWidth={1} />
-        </button>
-      </div>
-
-      {/* Day names */}
+      {/* Day names for month view */}
       {viewMode === "month" && (
-        <div className="mb-2 grid grid-cols-7 text-center text-[10px] font-semibold uppercase tracking-widest text-white/30">
+        <div className="px-4 mb-2 grid grid-cols-7 text-center text-[10px] font-semibold uppercase tracking-widest text-white/30">
           {["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"].map((d) => (
             <div key={d}>{d}</div>
           ))}
@@ -131,29 +151,33 @@ export default function CalendarPage() {
       )}
 
       {/* Calendar Grid */}
-      <div className="pb-32">
+      <div className="px-4 pb-32">
         {viewMode === "week" ? (
-          <WeekView days={days} getEventsForDay={getEventsForDay} onDayClick={(d) => { setSelectedDate(format(d, "yyyy-MM-dd")); }} />
+          <WeekView days={days} getEventsForDay={getEventsForDay} onDayClick={(d) => setSelectedDate(format(d, "yyyy-MM-dd"))} />
         ) : (
-          <MonthView days={days} currentDate={currentDate} getEventsForDay={getEventsForDay} onDayClick={(d) => { setSelectedDate(format(d, "yyyy-MM-dd")); }} />
+          <MonthView days={days} currentDate={currentDate} getEventsForDay={getEventsForDay} onDayClick={(d) => setSelectedDate(format(d, "yyyy-MM-dd"))} />
         )}
       </div>
 
-      {/* Selected Day Events */}
-      {selectedDate && (
+      {/* Day Detail Modal */}
+      {selectedDate && !showForm && (
         <DayDetail
           date={selectedDate}
-          events={events.filter((e) => e.date === selectedDate)}
-          onClose={() => setSelectedDate(null)}
+          onClose={handleCloseAll}
           onAdd={() => setShowForm(true)}
+          onDateChange={(newDate) => setSelectedDate(newDate)}
         />
       )}
 
-      {/* Add Event Form */}
-      {showForm && (
+      {/* Add Event Form — shown over DayDetail */}
+      {showForm && selectedDate && (
         <EventFormModal
-          date={selectedDate || format(new Date(), "yyyy-MM-dd")}
-          onClose={() => setShowForm(false)}
+          date={selectedDate}
+          onClose={() => {
+            setShowForm(false);
+            queryClient.invalidateQueries({ queryKey: ["calendar"] });
+          }}
+          onBack={() => setShowForm(false)}
         />
       )}
     </div>
@@ -261,29 +285,58 @@ function MonthView({
 
 function DayDetail({
   date,
-  events,
   onClose,
   onAdd,
+  onDateChange,
 }: {
   date: string;
-  events: CalendarEvent[];
   onClose: () => void;
   onAdd: () => void;
+  onDateChange: (newDate: string) => void;
 }) {
   const queryClient = useQueryClient();
+
+  // Own query so date navigation always fetches fresh data regardless of calendar range
+  const { data: events = [] } = useQuery<CalendarEvent[]>({
+    queryKey: ["calendar-day", date],
+    queryFn: () => apiRequest(`/api/calendar?from=${date}&to=${date}`),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiRequest(`/api/calendar/events/${id}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calendar-day", date] });
+      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    },
   });
+
+  const navigateDate = (dir: 1 | -1) => {
+    const current = new Date(date + "T12:00:00");
+    const next = dir === 1 ? addDays(current, 1) : subDays(current, 1);
+    onDateChange(format(next, "yyyy-MM-dd"));
+  };
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center">
       <div className="w-full max-w-md rounded-t-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pb-safe">
-        <div className="mb-6 flex items-center justify-between">
-          <h3 className="font-semibold text-base tracking-wide">
+        {/* Header with date navigation */}
+        <div className="mb-6 flex items-center gap-2">
+          <button
+            onClick={() => navigateDate(-1)}
+            className="rounded-full border border-white/[0.12] p-2 text-white/40 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <ChevronLeft size={16} strokeWidth={1.5} />
+          </button>
+          <h3 className="flex-1 text-center font-semibold text-base tracking-wide capitalize">
             {format(new Date(date + "T12:00:00"), "EEEE, d MMMM", { locale: pl })}
           </h3>
-          <button onClick={onClose} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
+          <button
+            onClick={() => navigateDate(1)}
+            className="rounded-full border border-white/[0.12] p-2 text-white/40 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <ChevronRight size={16} strokeWidth={1.5} />
+          </button>
+          <button onClick={onClose} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors ml-1">
             <X size={18} strokeWidth={1} />
           </button>
         </div>
@@ -321,7 +374,7 @@ function DayDetail({
         )}
 
         <button
-          onClick={() => { onClose(); onAdd(); }}
+          onClick={onAdd}
           className="w-full rounded-full border border-dashed border-white/20 py-3 text-sm font-semibold text-white/50 hover:border-white/40 hover:text-white/80 transition-colors flex items-center justify-center gap-2"
         >
           <Plus size={16} strokeWidth={1} /> Dodaj wydarzenie
@@ -334,9 +387,11 @@ function DayDetail({
 function EventFormModal({
   date,
   onClose,
+  onBack,
 }: {
   date: string;
   onClose: () => void;
+  onBack: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState("gym");
@@ -352,6 +407,7 @@ function EventFormModal({
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-day", eventDate] });
       onClose();
     },
   });
@@ -374,6 +430,9 @@ function EventFormModal({
         className="w-full max-w-md rounded-t-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pb-safe"
       >
         <div className="mb-8 flex items-center justify-between">
+          <button type="button" onClick={onBack} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
+            <ChevronLeft size={18} strokeWidth={1} />
+          </button>
           <h3 className="font-semibold text-base tracking-wide text-white">Nowe wydarzenie</h3>
           <button type="button" onClick={onClose} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
             <X size={18} strokeWidth={1} />

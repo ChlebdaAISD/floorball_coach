@@ -9,12 +9,16 @@ import {
   Footprints,
   ChevronRight,
   Loader2,
+  Settings,
 } from "lucide-react";
+import { TopNav } from "@/components/TopNav";
+import { useSettings } from "@/contexts/SettingsContext";
 
 type WorkoutType = "all" | "gym" | "floorball" | "running";
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<WorkoutType>("all");
+  const { openSettings } = useSettings();
 
   const { data: workouts = [], isLoading } = useQuery<any[]>({
     queryKey: ["workouts", filter],
@@ -33,14 +37,20 @@ export default function HistoryPage() {
   });
 
   return (
-    <div className="flex-1 overflow-y-auto bg-black text-white px-6 py-8 min-h-[100dvh]">
-      <div className="mt-4 mb-8">
-        <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Twoje treningi</p>
-        <h1 className="text-2xl font-semibold">Historia</h1>
-      </div>
+    <div className="bg-black text-white min-h-[100dvh]">
+      <TopNav
+        label="Twoje treningi"
+        title="Historia"
+        right={
+          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        }
+      />
 
+      <div className="px-4">
       {/* Filter Chips */}
-      <div className="mb-8 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+      <div className="mb-6 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
         {(["all", "gym", "floorball", "running"] as WorkoutType[]).map((t) => (
           <button
             key={t}
@@ -75,10 +85,10 @@ export default function HistoryPage() {
                   onClick={() => setExpandedId(isExpanded ? null : w.id)}
                   className="flex w-full items-center gap-4 p-5 text-left"
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/5">
-                    {w.workoutType === "gym" && <Dumbbell size={20} strokeWidth={1} className="text-white/60" />}
-                    {w.workoutType === "floorball" && <Target size={20} strokeWidth={1} className="text-white/60" />}
-                    {w.workoutType === "running" && <Footprints size={20} strokeWidth={1} className="text-white/60" />}
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#c5e063]/10">
+                    {w.workoutType === "gym" && <Dumbbell size={20} strokeWidth={1} className="text-[#c5e063]" />}
+                    {w.workoutType === "floorball" && <Target size={20} strokeWidth={1} className="text-[#c5e063]" />}
+                    {w.workoutType === "running" && <Footprints size={20} strokeWidth={1} className="text-[#c5e063]" />}
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-white">
@@ -181,6 +191,7 @@ export default function HistoryPage() {
           })}
         </div>
       )}
+      </div>
     </div>
   );
 }

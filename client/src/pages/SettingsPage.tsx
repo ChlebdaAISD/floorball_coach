@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/utils";
-import { ArrowLeft, Settings, Loader2 } from "lucide-react";
-import { useLocation } from "wouter";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -20,7 +19,6 @@ interface UserProfile {
 }
 
 export default function SettingsPage() {
-    const [, setLocation] = useLocation();
     const queryClient = useQueryClient();
 
     const { data: user, isLoading } = useQuery<UserProfile>({
@@ -77,23 +75,16 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="flex-1 overflow-y-auto bg-black px-6 py-8 text-white min-h-[100dvh]">
-            <div className="mb-10 flex items-center justify-between">
-                <button onClick={() => setLocation("/")} className="text-white/50 hover:text-white transition-colors">
-                    <ArrowLeft size={20} strokeWidth={1} />
-                </button>
-                <div className="text-white/30">
-                    <Settings size={20} strokeWidth={1} />
-                </div>
+        <div className="bg-black text-white min-h-[100dvh]">
+            <div className="px-4 pt-4 pb-3">
+                <p className="text-[11px] uppercase tracking-widest text-white/40">Konfiguracja</p>
+                <h1 className="text-xl font-semibold">Profil</h1>
             </div>
 
-            <div className="mb-10">
-                <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">Konfiguracja</p>
-                <h1 className="text-2xl font-semibold mb-3">Profil</h1>
-                <p className="text-sm text-white/30 font-light leading-relaxed">
-                    Informacje tutaj posłużą Twojemu trenerowi AI żeby lepiej dopasować plany treningowe do Twoich potrzeb i celów.
-                </p>
-            </div>
+            <div className="px-4 pb-32">
+            <p className="text-sm text-white/30 font-light leading-relaxed mb-10">
+                Informacje tutaj posłużą Twojemu trenerowi AI żeby lepiej dopasować plany treningowe do Twoich potrzeb i celów.
+            </p>
 
             <div className="space-y-12">
                 <div className="space-y-6">
@@ -183,6 +174,7 @@ export default function SettingsPage() {
                 >
                     {mutation.isPending ? "Zapisywanie..." : "Zapisz Profil"}
                 </Button>
+            </div>
             </div>
         </div>
     );

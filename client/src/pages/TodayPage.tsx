@@ -16,13 +16,13 @@ import { cn, apiRequest, EVENT_LABELS } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { CalendarEvent } from "@shared/schema";
-import { useLocation } from "wouter";
+import { Button, buttonVariants } from "@/components/ui/Button";
+import { TopNav } from "@/components/TopNav";
+import { useSettings } from "@/contexts/SettingsContext";
 
-// ─── Button styles ────────────────────────────────────────────
-const btnPrimary =
-  "w-full rounded-full bg-[#c5e063] py-3 text-sm font-semibold text-black transition-colors hover:bg-[#d4ef72] disabled:opacity-50";
-const btnSecondary =
-  "w-full rounded-full border border-white/25 py-3 text-sm font-semibold text-white transition-colors hover:border-white/45 disabled:opacity-50";
+// ─── Button styles (sourced from Button component variants) ──
+const btnPrimary = cn(buttonVariants({ variant: "primary", size: "md" }), "w-full");
+const btnSecondary = cn(buttonVariants({ variant: "secondary", size: "md" }), "w-full");
 
 // ─── HR Zones ────────────────────────────────────────────────
 const HR_ZONES = [
@@ -61,7 +61,7 @@ export default function TodayPage() {
   const [expandedEvent, setExpandedEvent] = useState<CalendarEvent | null>(null);
   const [eventNotes, setEventNotes] = useState<Record<number, string>>({});
   const [fizjoPromptId, setFizjoPromptId] = useState<number | null>(null);
-  const [, setLocation] = useLocation();
+  const { openSettings } = useSettings();
 
   const updateEventMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
@@ -126,22 +126,17 @@ export default function TodayPage() {
     updateEventMutation.mutate({ id: event.id, data: { status: "completed", notes: eventNotes[event.id] ?? event.notes ?? null } });
 
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 pt-2">
-        <Activity className="h-6 w-6 flex-shrink-0" style={{ color: "#c5e063" }} strokeWidth={1.5} />
-        <div className="flex-1">
-          <p className="text-[11px] uppercase tracking-widest text-white/40 leading-none mb-0.5">
-            {format(new Date(), "EEEE", { locale: pl })}
-          </p>
-          <h1 className="text-xl font-semibold leading-none">
-            {format(new Date(), "d MMMM", { locale: pl })}
-          </h1>
-        </div>
-        <button onClick={() => setLocation("/ustawienia")} className="p-2 text-white/40 hover:text-white/70 transition-colors">
-          <Settings size={20} strokeWidth={1} />
-        </button>
-      </div>
+    <div>
+      <TopNav
+        label={format(new Date(), "EEEE", { locale: pl })}
+        title={format(new Date(), "d MMMM", { locale: pl })}
+        right={
+          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        }
+      />
+      <div className="px-4 space-y-4 pb-8">
 
       {/* Event list */}
       {todayEvents.length === 0 ? (
@@ -348,6 +343,7 @@ export default function TodayPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

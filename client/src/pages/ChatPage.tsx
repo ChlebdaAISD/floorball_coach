@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2, Check, X, Bot, User } from "lucide-react";
+import { Send, Loader2, Check, X, Bot, User, Settings } from "lucide-react";
 import { cn, apiRequest } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { ChatMessage } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
+import { TopNav } from "@/components/TopNav";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { openSettings } = useSettings();
   const queryClient = useQueryClient();
 
   const { data: messages = [] } = useQuery<ChatMessage[]>({
@@ -72,13 +75,18 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-black text-white">
-      {/* Header */}
-      <div className="px-6 py-5 mt-2 sticky top-0 z-10 bg-black/90 backdrop-blur-xl border-b border-white/[0.06]">
-        <h1 className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">Trener AI</h1>
-      </div>
+      <TopNav
+        label="Asystent"
+        title="Trener AI"
+        right={
+          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        }
+      />
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none pb-[120px]">
+      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none">
         {messages.length === 0 && !sendMutation.isPending && (
           <div className="flex h-full flex-col items-center justify-center text-center px-4">
             <div className="mb-6 h-16 w-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
@@ -131,8 +139,8 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <div className="fixed bottom-[88px] sm:bottom-0 left-0 right-0 border-t border-white/[0.06] bg-black/90 backdrop-blur-xl px-4 py-4 pb-safe z-20">
-        <div className="flex items-end gap-2 max-w-lg mx-auto w-full">
+      <div className="shrink-0 border-t border-white/[0.06] bg-black/90 backdrop-blur-xl px-4 py-4">
+        <div className="flex items-end gap-2">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -145,12 +153,12 @@ export default function ChatPage() {
             placeholder="Napisz do trenera..."
             rows={1}
             style={{ minHeight: '44px', maxHeight: '120px' }}
-            className="flex-1 resize-none rounded-[22px] border border-white/[0.15] bg-[#111111] px-5 py-3 text-sm placeholder:text-white/20 font-light focus:border-white/30 focus:outline-none transition-colors w-full"
+            className="flex-1 resize-none rounded-[22px] border border-white/[0.15] bg-[#111111] px-5 py-3 text-sm placeholder:text-white/20 font-light focus:border-white/30 focus:outline-none transition-colors"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || sendMutation.isPending}
-            className="flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-[#6b7cff] text-white transition-all disabled:opacity-40 disabled:scale-95 active:scale-95 hover:bg-[#5a6bf0]"
+            className="flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-[#c5e063] text-black transition-all disabled:opacity-40 disabled:scale-95 active:scale-95 hover:bg-[#d4ef72]"
           >
             <Send size={16} strokeWidth={1} className="ml-0.5" />
           </button>
