@@ -10,6 +10,7 @@ import OnboardingPage from "@/pages/OnboardingPage";
 import { BottomNav } from "@/components/BottomNav";
 import { SettingsModal } from "@/components/SettingsModal";
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import { PullToRefresh } from "@/components/PullToRefresh";
 
 export default function App() {
   const { isAuthenticated, isLoading, needsOnboarding } = useAuth();
@@ -35,17 +36,19 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center bg-zinc-950">
         <div
           className="relative flex w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl"
-          style={{ height: "min(100vh, 900px)" }}
+          style={{ height: "min(100dvh, 900px)" }}
         >
-          <div id="scroll-container" className="flex-1 overflow-y-auto">
-            <Switch>
-              <Route path="/" component={TodayPage} />
-              <Route path="/kalendarz" component={CalendarPage} />
-              <Route path="/trener" component={ChatPage} />
-              <Route path="/statystyki" component={DashboardPage} />
-              <Route path="/historia" component={HistoryPage} />
-            </Switch>
-          </div>
+          <PullToRefresh>
+            <div id="scroll-container" className="flex-1 overflow-y-auto">
+              <Switch>
+                <Route path="/" component={TodayPage} />
+                <Route path="/kalendarz" component={CalendarPage} />
+                <Route path="/trener" component={ChatPage} />
+                <Route path="/statystyki" component={DashboardPage} />
+                <Route path="/historia" component={HistoryPage} />
+              </Switch>
+            </div>
+          </PullToRefresh>
           <BottomNav />
           <SettingsModal />
         </div>

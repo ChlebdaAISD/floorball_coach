@@ -4,12 +4,19 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { login, isLoggingIn, loginError } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
+  const { login, register, isLoggingIn, loginError } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(password);
+    if (mode === "login") {
+      await login({ email, password });
+    } else {
+      await register({ email, username, password });
+    }
   };
 
   return (
@@ -21,25 +28,47 @@ export default function LoginPage() {
 
       <div className="z-10 flex w-full max-w-sm flex-col items-center justify-center flex-1">
         <div className="mb-12 flex flex-col items-center gap-3 text-center w-full">
-          <h1 className="text-4xl font-semibold tracking-[0.2em] uppercase">Witaj</h1>
-          <p className="text-sm text-white/40 font-light tracking-wide">Zaloguj się, aby kontynuować</p>
+          <h1 className="text-4xl font-semibold tracking-[0.2em] uppercase">
+            {mode === "login" ? "Witaj" : "Rejestracja"}
+          </h1>
+          <p className="text-sm text-white/40 font-light tracking-wide">
+            {mode === "login" ? "Zaloguj się, aby kontynuować" : "Utwórz nowe konto"}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="w-full space-y-4">
+        <form onSubmit={handleSubmit} className="w-full space-y-3">
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            autoFocus
+            className="rounded-full placeholder:text-white/20 focus-visible:ring-white/40"
+          />
+          {mode === "register" && (
+            <Input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Nazwa użytkownika"
+              className="rounded-full placeholder:text-white/20 focus-visible:ring-white/40"
+            />
+          )}
           <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Wpisz hasło..."
-            autoFocus
-            className="text-center rounded-full placeholder:text-white/20 focus-visible:ring-white/40"
+            placeholder="Hasło"
+            className="rounded-full placeholder:text-white/20 focus-visible:ring-white/40"
           />
           <Button
             type="submit"
-            disabled={isLoggingIn || !password}
+            disabled={isLoggingIn || !email || !password || (mode === "register" && !username)}
             className="w-full"
           >
-            {isLoggingIn ? "Logowanie..." : "Zaloguj się →"}
+            {isLoggingIn
+              ? mode === "login" ? "Logowanie..." : "Rejestracja..."
+              : mode === "login" ? "Zaloguj się →" : "Zarejestruj się →"}
           </Button>
         </form>
 
@@ -48,6 +77,14 @@ export default function LoginPage() {
             {loginError.message || "Błąd logowania"}
           </p>
         )}
+
+        <button
+          type="button"
+          onClick={() => setMode(mode === "login" ? "register" : "login")}
+          className="mt-8 text-xs text-white/30 hover:text-white/60 transition-colors tracking-wide"
+        >
+          {mode === "login" ? "Nie masz konta? Zarejestruj się" : "Masz już konto? Zaloguj się"}
+        </button>
       </div>
 
       <div className="w-full flex justify-center pb-8 text-white/20 text-xs tracking-widest uppercase">

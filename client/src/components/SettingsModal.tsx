@@ -11,13 +11,12 @@ import type { AthleteProfile, Injury } from "@shared/schema";
 interface UserProfile {
   id: number;
   username: string;
-  bio?: string | null;
+  email?: string | null;
   trainingGoal?: string | null;
   seasonStart?: string | null;
   seasonEnd?: string | null;
   offSeasonStart?: string | null;
   offSeasonEnd?: string | null;
-  interviewAnswers?: string | null;
 }
 
 export function SettingsModal() {
@@ -30,6 +29,12 @@ export function SettingsModal() {
     enabled: isOpen,
   });
 
+  const { data: profile } = useQuery<AthleteProfile | null>({
+    queryKey: ["profile"],
+    queryFn: () => apiRequest("/api/profile"),
+    enabled: isOpen,
+  });
+
   const [form, setForm] = useState({
     bio: "",
     trainingGoal: "",
@@ -37,22 +42,26 @@ export function SettingsModal() {
     seasonEnd: "",
     offSeasonStart: "",
     offSeasonEnd: "",
-    interviewAnswers: "",
   });
 
   useEffect(() => {
     if (user) {
-      setForm({
-        bio: user.bio || "",
+      setForm((f) => ({
+        ...f,
         trainingGoal: user.trainingGoal || "",
         seasonStart: user.seasonStart ? new Date(user.seasonStart).toISOString().split("T")[0] : "",
         seasonEnd: user.seasonEnd ? new Date(user.seasonEnd).toISOString().split("T")[0] : "",
         offSeasonStart: user.offSeasonStart ? new Date(user.offSeasonStart).toISOString().split("T")[0] : "",
         offSeasonEnd: user.offSeasonEnd ? new Date(user.offSeasonEnd).toISOString().split("T")[0] : "",
-        interviewAnswers: user.interviewAnswers || "",
-      });
+      }));
     }
   }, [user]);
+
+  useEffect(() => {
+    if (profile) {
+      setForm((f) => ({ ...f, bio: profile.bio || "" }));
+    }
+  }, [profile]);
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) =>
@@ -62,14 +71,9 @@ export function SettingsModal() {
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(["auth"], data);
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
       closeSettings();
     },
-  });
-
-  const { data: profile } = useQuery<AthleteProfile | null>({
-    queryKey: ["profile"],
-    queryFn: () => apiRequest("/api/profile"),
-    enabled: isOpen,
   });
 
   const { data: activeInjuries = [] } = useQuery<Injury[]>({
@@ -153,14 +157,6 @@ export function SettingsModal() {
                       value={form.trainingGoal}
                       onChange={(e) => handleChange("trainingGoal", e.target.value)}
                       placeholder="Np. Poprawa wydolności..."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Odpowiedzi z Wywiadu</label>
-                    <Textarea
-                      value={form.interviewAnswers}
-                      onChange={(e) => handleChange("interviewAnswers", e.target.value)}
-                      placeholder="Możesz tu skopiować odpowiedź z formularza..."
                     />
                   </div>
                 </div>

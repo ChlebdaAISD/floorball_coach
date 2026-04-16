@@ -33,6 +33,7 @@ export default function ChatPage() {
 
       const optimisticMessage: ChatMessage = {
         id: Math.random(),
+        userId: 0,
         role: "user",
         content: newContent,
         createdAt: new Date() as any,

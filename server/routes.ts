@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import bcrypt from "bcrypt";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, inArray, or } from "drizzle-orm";
 import {
   users,
   exercises,
@@ -62,17 +62,60 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 export function registerRoutes(app: Express) {
   // ─── Auth ────────────────────────────────────────────────
   app.post("/api/login", async (req, res) => {
-    const { password } = req.body;
+    const { email, username, password } = req.body;
     if (!password) return res.status(400).json({ error: "Brak hasła" });
 
-    const [user] = await db.select().from(users).limit(1);
-    if (!user) return res.status(401).json({ error: "Brak użytkownika" });
+    let user: typeof users.$inferSelect | undefined;
+
+    if (email) {
+      // Email-based login
+      const [found] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      user = found;
+    } else if (username) {
+      // Legacy username-based login (backward compat)
+      const [found] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      user = found;
+    } else {
+      // Single-user fallback (legacy)
+      const [found] = await db.select().from(users).limit(1);
+      user = found;
+    }
+
+    if (!user) return res.status(401).json({ error: "Nieprawidłowe dane logowania" });
 
     const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ error: "Nieprawidłowe hasło" });
+    if (!valid) return res.status(401).json({ error: "Nieprawidłowe dane logowania" });
 
     req.session.userId = user.id;
-    res.json({ id: user.id, username: user.username });
+    res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      onboardingComplete: user.onboardingComplete,
+    });
+  });
+
+  app.post("/api/register", async (req, res) => {
+    const { email, username, password } = req.body;
+    if (!email || !password || !username) {
+      return res.status(400).json({ error: "Podaj email, username i hasło" });
+    }
+
+    // Check if email or username already taken
+    const [existingEmail] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    if (existingEmail) return res.status(409).json({ error: "Email już zajęty" });
+
+    const [existingUsername] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    if (existingUsername) return res.status(409).json({ error: "Nazwa użytkownika już zajęta" });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const [user] = await db
+      .insert(users)
+      .values({ email, username, passwordHash })
+      .returning();
+
+    req.session.userId = user.id;
+    res.status(201).json({ id: user.id, username: user.username, email: user.email });
   });
 
   app.post("/api/logout", (req, res) => {
@@ -84,13 +127,12 @@ export function registerRoutes(app: Express) {
       .select({
         id: users.id,
         username: users.username,
-        bio: users.bio,
+        email: users.email,
         trainingGoal: users.trainingGoal,
         seasonStart: users.seasonStart,
         seasonEnd: users.seasonEnd,
         offSeasonStart: users.offSeasonStart,
         offSeasonEnd: users.offSeasonEnd,
-        interviewAnswers: users.interviewAnswers,
         onboardingComplete: users.onboardingComplete,
         onboardingProgress: users.onboardingProgress,
       })
@@ -102,22 +144,26 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/settings", requireAuth, async (req, res) => {
     const {
-      bio, trainingGoal, seasonStart, seasonEnd, offSeasonStart, offSeasonEnd, interviewAnswers
+      trainingGoal, seasonStart, seasonEnd, offSeasonStart, offSeasonEnd
     } = req.body;
+    const userId = req.session.userId!;
 
     const [updated] = await db
       .update(users)
       .set({
-        bio,
         trainingGoal,
         seasonStart: seasonStart || null,
         seasonEnd: seasonEnd || null,
         offSeasonStart: offSeasonStart || null,
         offSeasonEnd: offSeasonEnd || null,
-        interviewAnswers,
       })
-      .where(eq(users.id, req.session.userId!))
+      .where(eq(users.id, userId))
       .returning();
+
+    // If bio was sent, save it to athleteProfiles
+    if (req.body.bio !== undefined) {
+      await upsertAthleteProfile(userId, { bio: req.body.bio });
+    }
 
     res.json(updated);
   });
@@ -125,22 +171,24 @@ export function registerRoutes(app: Express) {
   // ─── Readiness / Samopoczucie ────────────────────────────
   app.get("/api/readiness/today", requireAuth, async (req, res) => {
     const today = todayInWarsaw();
+    const userId = req.session.userId!;
     const [log] = await db
       .select()
       .from(readinessLogs)
-      .where(eq(readinessLogs.date, today))
+      .where(and(eq(readinessLogs.date, today), eq(readinessLogs.userId, userId)))
       .limit(1);
     res.json(log || null);
   });
 
   app.post("/api/readiness", requireAuth, async (req, res) => {
     const today = todayInWarsaw();
+    const userId = req.session.userId!;
     const { trainingReadiness, bodyBattery, sleepScore, hrvStatus, painLevel, stressLevel } = req.body;
 
     const [existing] = await db
       .select()
       .from(readinessLogs)
-      .where(eq(readinessLogs.date, today))
+      .where(and(eq(readinessLogs.date, today), eq(readinessLogs.userId, userId)))
       .limit(1);
 
     if (existing) {
@@ -154,6 +202,7 @@ export function registerRoutes(app: Express) {
       const [inserted] = await db
         .insert(readinessLogs)
         .values({
+          userId,
           date: today,
           trainingReadiness,
           bodyBattery,
@@ -174,11 +223,12 @@ export function registerRoutes(app: Express) {
   });
 
   // ─── Plans ───────────────────────────────────────────────
-  app.get("/api/plans/active", requireAuth, async (_req, res) => {
+  app.get("/api/plans/active", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const [plan] = await db
       .select()
       .from(trainingPlans)
-      .where(eq(trainingPlans.isActive, true))
+      .where(and(eq(trainingPlans.isActive, true), eq(trainingPlans.userId, userId)))
       .limit(1);
     if (!plan) return res.json(null);
 
@@ -231,6 +281,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/calendar", requireAuth, async (req, res) => {
     const from = req.query.from as string;
     const to = req.query.to as string;
+    const userId = req.session.userId!;
     if (!from || !to) return res.status(400).json({ error: "Podaj from i to" });
 
     const events = await db
@@ -238,6 +289,7 @@ export function registerRoutes(app: Express) {
       .from(calendarEvents)
       .where(
         and(
+          eq(calendarEvents.userId, userId),
           gte(calendarEvents.date, from),
           lte(calendarEvents.date, to),
           sql`${calendarEvents.status} != 'cancelled'`
@@ -248,7 +300,8 @@ export function registerRoutes(app: Express) {
   });
 
   app.post("/api/calendar/events", requireAuth, async (req, res) => {
-    const data: InsertCalendarEvent = req.body;
+    const userId = req.session.userId!;
+    const data: InsertCalendarEvent = { ...req.body, userId };
     const [event] = await db
       .insert(calendarEvents)
       .values(data)
@@ -258,10 +311,28 @@ export function registerRoutes(app: Express) {
 
   app.put("/api/calendar/events/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
+    const userId = req.session.userId!;
+    // Whitelist safe fields to update
+    const { date, time, eventType, title, description, isRecurring, recurrenceRule,
+      trainingDayId, workoutLogId, source, status, notes } = req.body;
+    const updates: Record<string, unknown> = {};
+    if (date !== undefined) updates.date = date;
+    if (time !== undefined) updates.time = time;
+    if (eventType !== undefined) updates.eventType = eventType;
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (isRecurring !== undefined) updates.isRecurring = isRecurring;
+    if (recurrenceRule !== undefined) updates.recurrenceRule = recurrenceRule;
+    if (trainingDayId !== undefined) updates.trainingDayId = trainingDayId;
+    if (workoutLogId !== undefined) updates.workoutLogId = workoutLogId;
+    if (source !== undefined) updates.source = source;
+    if (status !== undefined) updates.status = status;
+    if (notes !== undefined) updates.notes = notes;
+
     const [updated] = await db
       .update(calendarEvents)
-      .set(req.body)
-      .where(eq(calendarEvents.id, id))
+      .set(updates)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)))
       .returning();
     if (!updated) return res.status(404).json({ error: "Nie znaleziono" });
     res.json(updated);
@@ -269,12 +340,16 @@ export function registerRoutes(app: Express) {
 
   app.delete("/api/calendar/events/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
-    await db.delete(calendarEvents).where(eq(calendarEvents.id, id));
+    const userId = req.session.userId!;
+    await db.delete(calendarEvents).where(
+      and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId))
+    );
     res.status(204).end();
   });
 
   app.post("/api/calendar/apply-suggestion", requireAuth, async (req, res) => {
     const { changes } = req.body;
+    const userId = req.session.userId!;
     if (!changes || !Array.isArray(changes)) {
       return res.status(400).json({ error: "Nieprawidłowy format zmian" });
     }
@@ -285,9 +360,10 @@ export function registerRoutes(app: Express) {
           await db
             .update(calendarEvents)
             .set({ status: "cancelled" })
-            .where(eq(calendarEvents.id, change.event_id));
+            .where(and(eq(calendarEvents.id, change.event_id), eq(calendarEvents.userId, userId)));
         } else if (change.action === "add" && change.date) {
           await db.insert(calendarEvents).values({
+            userId,
             date: change.date,
             time: change.time || null,
             eventType: change.event_type || "rest",
@@ -296,7 +372,7 @@ export function registerRoutes(app: Express) {
             source: "ai",
           });
         } else if (change.action === "modify" && change.event_id) {
-          const updates: Record<string, any> = {};
+          const updates: Record<string, unknown> = {};
           if (change.title) updates.title = change.title;
           if (change.event_type) updates.eventType = change.event_type;
           if (change.time !== undefined) updates.time = change.time;
@@ -305,7 +381,7 @@ export function registerRoutes(app: Express) {
             await db
               .update(calendarEvents)
               .set(updates)
-              .where(eq(calendarEvents.id, change.event_id));
+              .where(and(eq(calendarEvents.id, change.event_id), eq(calendarEvents.userId, userId)));
           }
         }
       }
@@ -317,13 +393,15 @@ export function registerRoutes(app: Express) {
   });
 
   // ─── Today ───────────────────────────────────────────────
-  app.get("/api/today/event", requireAuth, async (_req, res) => {
+  app.get("/api/today/event", requireAuth, async (req, res) => {
     const today = todayInWarsaw();
+    const userId = req.session.userId!;
     const events = await db
       .select()
       .from(calendarEvents)
       .where(
         and(
+          eq(calendarEvents.userId, userId),
           eq(calendarEvents.date, today),
           sql`${calendarEvents.status} != 'cancelled'`,
         ),
@@ -333,10 +411,11 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/today/gym-plan/:eventId", requireAuth, async (req, res) => {
     const eventId = parseInt(req.params.eventId);
+    const userId = req.session.userId!;
     const [event] = await db
       .select()
       .from(calendarEvents)
-      .where(eq(calendarEvents.id, eventId));
+      .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, userId)));
 
     if (!event || !event.trainingDayId) {
       return res.status(404).json({ error: "Brak planu" });
@@ -372,7 +451,8 @@ export function registerRoutes(app: Express) {
   });
 
   app.post("/api/today/readiness", requireAuth, async (req, res) => {
-    const data: InsertReadinessLog = req.body;
+    const userId = req.session.userId!;
+    const data: InsertReadinessLog = { ...req.body, userId };
     const [log] = await db.insert(readinessLogs).values(data).returning();
 
     // If there's a gym event today, analyze with AI
@@ -396,8 +476,9 @@ export function registerRoutes(app: Express) {
 
   // ─── Workouts ────────────────────────────────────────────
   app.post("/api/workouts", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const { exerciseLogs: exLogs, eventNotes, ...workoutData } = req.body;
-    const data: InsertWorkoutLog = workoutData;
+    const data: InsertWorkoutLog = { ...workoutData, userId };
 
     // Upsert: if a workout already exists for this calendar event, update it
     let workout: typeof workoutLogs.$inferSelect;
@@ -405,11 +486,13 @@ export function registerRoutes(app: Express) {
       const [existing] = await db
         .select()
         .from(workoutLogs)
-        .where(eq(workoutLogs.calendarEventId, data.calendarEventId))
+        .where(and(
+          eq(workoutLogs.calendarEventId, data.calendarEventId),
+          eq(workoutLogs.userId, userId),
+        ))
         .limit(1);
 
       if (existing) {
-        // Update the existing record with new data
         const { calendarEventId, ...updateFields } = data;
         const [updated] = await db
           .update(workoutLogs)
@@ -418,7 +501,6 @@ export function registerRoutes(app: Express) {
           .returning();
         workout = updated;
 
-        // Replace exercise logs
         if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
           await db.delete(exerciseLogs).where(eq(exerciseLogs.workoutLogId, workout.id));
           const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
@@ -428,7 +510,6 @@ export function registerRoutes(app: Express) {
           await db.insert(exerciseLogs).values(logsToInsert);
         }
       } else {
-        // Insert new workout
         const [inserted] = await db.insert(workoutLogs).values(data).returning();
         workout = inserted;
 
@@ -468,31 +549,31 @@ export function registerRoutes(app: Express) {
       await db
         .update(calendarEvents)
         .set(eventUpdate)
-        .where(eq(calendarEvents.id, data.calendarEventId));
+        .where(and(eq(calendarEvents.id, data.calendarEventId), eq(calendarEvents.userId, userId)));
     }
 
     res.status(200).json(workout);
   });
 
   app.get("/api/workouts", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const type = req.query.type as string | undefined;
     const limit = parseInt((req.query.limit as string) || "20");
 
-    let query = db
+    const whereClause = type
+      ? and(eq(workoutLogs.userId, userId), eq(workoutLogs.workoutType, type))
+      : eq(workoutLogs.userId, userId);
+
+    const workoutList = await db
       .select()
       .from(workoutLogs)
+      .where(whereClause)
       .orderBy(desc(workoutLogs.date))
       .limit(limit);
 
-    if (type) {
-      query = query.where(eq(workoutLogs.workoutType, type)) as typeof query;
-    }
-
-    const workouts = await query;
-
     // Deduplicate by calendarEventId — keep the latest entry per event
     const seen = new Set<number>();
-    const deduped = workouts.filter((w: any) => {
+    const deduped = workoutList.filter((w: any) => {
       if (!w.calendarEventId) return true;
       if (seen.has(w.calendarEventId)) return false;
       seen.add(w.calendarEventId);
@@ -504,18 +585,20 @@ export function registerRoutes(app: Express) {
 
   // One-time cleanup: delete duplicate workouts (keep latest per calendarEventId)
   app.delete("/api/workouts/cleanup-duplicates", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const all = await db
       .select()
       .from(workoutLogs)
+      .where(eq(workoutLogs.userId, userId))
       .orderBy(desc(workoutLogs.id));
 
-    const seen = new Map<number, number>(); // calendarEventId → keep id
+    const seen = new Map<number, number>();
     const toDelete: number[] = [];
 
     for (const w of all) {
       if (!w.calendarEventId) continue;
       if (!seen.has(w.calendarEventId)) {
-        seen.set(w.calendarEventId, w.id); // keep the first (latest, desc order)
+        seen.set(w.calendarEventId, w.id);
       } else {
         toDelete.push(w.id);
       }
@@ -530,10 +613,11 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/workouts/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
+    const userId = req.session.userId!;
     const [workout] = await db
       .select()
       .from(workoutLogs)
-      .where(eq(workoutLogs.id, id));
+      .where(and(eq(workoutLogs.id, id), eq(workoutLogs.userId, userId)));
     if (!workout) return res.status(404).json({ error: "Nie znaleziono" });
 
     const exLogs = await db
@@ -560,22 +644,24 @@ export function registerRoutes(app: Express) {
 
   // ─── Dashboard ───────────────────────────────────────────
   app.get("/api/dashboard/readiness", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const days = parseInt((req.query.days as string) || "30");
     const sinceDate = daysAgoInWarsaw(days);
 
     const logs = await db
       .select()
       .from(readinessLogs)
-      .where(gte(readinessLogs.date, sinceDate))
+      .where(and(eq(readinessLogs.userId, userId), gte(readinessLogs.date, sinceDate)))
       .orderBy(readinessLogs.date);
     res.json(logs);
   });
 
   app.get("/api/dashboard/tonnage", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const weeks = parseInt((req.query.weeks as string) || "8");
     const sinceDate = daysAgoInWarsaw(weeks * 7);
 
-    const workouts = await db
+    const workoutList = await db
       .select({
         date: workoutLogs.date,
         workoutType: workoutLogs.workoutType,
@@ -584,15 +670,17 @@ export function registerRoutes(app: Express) {
         durationMinutes: workoutLogs.durationMinutes,
       })
       .from(workoutLogs)
-      .where(gte(workoutLogs.date, sinceDate))
+      .where(and(eq(workoutLogs.userId, userId), gte(workoutLogs.date, sinceDate)))
       .orderBy(workoutLogs.date);
-    res.json(workouts);
+    res.json(workoutList);
   });
 
   app.get("/api/dashboard/load", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const summaries = await db
       .select()
       .from(weeklySummaries)
+      .where(eq(weeklySummaries.userId, userId))
       .orderBy(desc(weeklySummaries.weekStart))
       .limit(12);
     res.json(summaries);
@@ -600,10 +688,12 @@ export function registerRoutes(app: Express) {
 
   // ─── Chat (AI Coach) ────────────────────────────────────
   app.get("/api/chat", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const limit = parseInt((req.query.limit as string) || "50");
     const messages = await db
       .select()
       .from(chatMessages)
+      .where(and(eq(chatMessages.userId, userId), eq(chatMessages.contextType, "chat")))
       .orderBy(desc(chatMessages.createdAt))
       .limit(limit);
     res.json(messages.reverse());
@@ -615,7 +705,7 @@ export function registerRoutes(app: Express) {
     const userId = req.session.userId!;
 
     // Save user message
-    await db.insert(chatMessages).values({ role: "user", content, contextType: "chat" });
+    await db.insert(chatMessages).values({ userId, role: "user", content, contextType: "chat" });
 
     try {
       const response = await chatWithCoach(content, userId);
@@ -628,6 +718,7 @@ export function registerRoutes(app: Express) {
       const [saved] = await db
         .insert(chatMessages)
         .values({
+          userId,
           role: "assistant",
           content: response.text,
           planSuggestion: response.planSuggestion || null,
@@ -642,6 +733,7 @@ export function registerRoutes(app: Express) {
       const [saved] = await db
         .insert(chatMessages)
         .values({
+          userId,
           role: "assistant",
           content: "Przepraszam, wystąpił błąd podczas analizy. Spróbuj ponownie.",
           contextType: "chat",
@@ -715,11 +807,15 @@ export function registerRoutes(app: Express) {
   });
 
   // ─── Onboarding ─────────────────────────────────────────
-  app.get("/api/onboarding/messages", requireAuth, async (_req, res) => {
+  app.get("/api/onboarding/messages", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
     const msgs = await db
       .select()
       .from(chatMessages)
-      .where(eq(chatMessages.contextType, "onboarding"))
+      .where(and(
+        eq(chatMessages.userId, userId),
+        eq(chatMessages.contextType, "onboarding"),
+      ))
       .orderBy(chatMessages.createdAt);
     res.json(msgs);
   });
@@ -736,6 +832,7 @@ export function registerRoutes(app: Express) {
     // Save user message (unless this is the initial trigger with no content)
     if (content) {
       await db.insert(chatMessages).values({
+        userId,
         role: "user",
         content,
         contextType: "onboarding",
@@ -754,7 +851,6 @@ export function registerRoutes(app: Express) {
           await upsertAthleteProfile(userId, profile);
         }
         if (userUpdate && Object.keys(userUpdate).length > 0) {
-          // Normalize empty strings to null for date fields
           const cleanedUpdate: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(userUpdate)) {
             cleanedUpdate[k] = v === "" ? null : v;
@@ -786,6 +882,7 @@ export function registerRoutes(app: Express) {
       const [saved] = await db
         .insert(chatMessages)
         .values({
+          userId,
           role: "assistant",
           content: response.text,
           contextType: "onboarding",
@@ -820,8 +917,10 @@ export function registerRoutes(app: Express) {
       .update(users)
       .set({ onboardingComplete: false, onboardingProgress: {} })
       .where(eq(users.id, userId));
-    // Clear onboarding chat history
-    await db.delete(chatMessages).where(eq(chatMessages.contextType, "onboarding"));
+    // Clear only this user's onboarding chat history
+    await db.delete(chatMessages).where(
+      and(eq(chatMessages.userId, userId), eq(chatMessages.contextType, "onboarding"))
+    );
     res.json({ ok: true });
   });
 
@@ -833,7 +932,7 @@ export function registerRoutes(app: Express) {
     const [workout] = await db
       .select()
       .from(workoutLogs)
-      .where(eq(workoutLogs.id, id));
+      .where(and(eq(workoutLogs.id, id), eq(workoutLogs.userId, userId)));
     if (!workout) return res.status(404).json({ error: "Nie znaleziono treningu" });
 
     try {
@@ -869,7 +968,7 @@ async function upsertAthleteProfile(
     .where(eq(athleteProfiles.userId, userId))
     .limit(1);
 
-  // Strip undefined/null-coerce for cleaner diff
+  // Strip undefined for cleaner diff
   const cleanPatch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
     if (v !== undefined) cleanPatch[k] = v;
@@ -899,7 +998,6 @@ async function upsertInjuryFromAi(
   if (!injuryData || typeof injuryData !== "object") return;
   const data = injuryData as Record<string, unknown>;
 
-  // Accept both snake_case (from AI JSON) and camelCase
   const bodyPart = (data.body_part || data.bodyPart) as string | undefined;
   if (!bodyPart) return;
 
@@ -915,7 +1013,6 @@ async function upsertInjuryFromAi(
     source,
   };
 
-  // Check for existing active injury on same body part — update instead of creating duplicate
   const [existing] = await db
     .select()
     .from(injuries)
@@ -934,10 +1031,10 @@ async function upsertInjuryFromAi(
     if (record.severity) patch.severity = record.severity;
     if (record.description) patch.description = record.description;
     if (record.managementNotes) patch.managementNotes = record.managementNotes;
-    // If AI indicates resolved, mark inactive
     if (record.isActive === false) patch.isActive = false;
     await db.update(injuries).set(patch).where(eq(injuries.id, existing.id));
-  } else {
+  } else if (record.isActive !== false) {
+    // Only insert new injury if it's active (skip inactive-from-start AI reports)
     await db.insert(injuries).values(record as InsertInjury);
   }
 }

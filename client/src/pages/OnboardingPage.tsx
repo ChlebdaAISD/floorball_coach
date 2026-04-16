@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Loader2, Bot, Sparkles } from "lucide-react";
+import { Send, Loader2, Bot, Sparkles, CheckCircle2, AlertCircle, RotateCcw } from "lucide-react";
 import { cn, apiRequest } from "@/lib/utils";
 import type { ChatMessage } from "@shared/schema";
 
@@ -26,6 +26,8 @@ export default function OnboardingPage() {
   const queryClient = useQueryClient();
   const [topicsCovered, setTopicsCovered] = useState<Record<string, boolean>>({});
   const [hasKickedOff, setHasKickedOff] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
 
   const { data: messages = [] } = useQuery<ChatMessage[]>({
     queryKey: ["onboarding-messages"],
@@ -39,12 +41,14 @@ export default function OnboardingPage() {
         body: JSON.stringify({ content }),
       }),
     onMutate: async (content) => {
+      setLastFailedContent(null);
       setInput("");
       if (content) {
         await queryClient.cancelQueries({ queryKey: ["onboarding-messages"] });
         const previous = queryClient.getQueryData<ChatMessage[]>(["onboarding-messages"]);
         const optimistic: ChatMessage = {
           id: Math.random(),
+          userId: 0,
           role: "user",
           content,
           createdAt: new Date() as any,
@@ -56,19 +60,22 @@ export default function OnboardingPage() {
           ...(old || []),
           optimistic,
         ]);
-        return { previous };
+        return { previous, content };
       }
+      return { previous: undefined, content: null };
     },
-    onError: (_err, _content, ctx) => {
+    onError: (_err, content, ctx) => {
       if (ctx?.previous) {
         queryClient.setQueryData(["onboarding-messages"], ctx.previous);
       }
+      // Save the content so user can retry
+      if (content) setLastFailedContent(content);
     },
     onSuccess: (data) => {
       setTopicsCovered(data.topicsCovered || {});
       if (data.isComplete) {
-        // Refresh auth so App picks up onboardingComplete=true
-        queryClient.invalidateQueries({ queryKey: ["auth"] });
+        setIsCompleted(true);
+        // Don't invalidate auth yet — wait for user to click "Przejdź do aplikacji"
       }
     },
     onSettled: () => {
@@ -93,13 +100,72 @@ export default function OnboardingPage() {
     sendMutation.mutate(input.trim());
   };
 
+  const handleRetry = () => {
+    const content = lastFailedContent;
+    setLastFailedContent(null);
+    sendMutation.mutate(content);
+  };
+
+  const handleEnterApp = () => {
+    queryClient.invalidateQueries({ queryKey: ["auth"] });
+  };
+
   const coveredCount = TOPICS.filter((t) => topicsCovered[t.key]).length;
+
+  // Completion screen
+  if (isCompleted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+        <div
+          className="relative flex w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl px-8 text-center"
+          style={{ height: "min(100dvh, 900px)" }}
+        >
+          {/* Icon */}
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#c5e063]/10 border border-[#c5e063]/20 mb-6">
+            <CheckCircle2 size={32} strokeWidth={1} className="text-[#c5e063]" />
+          </div>
+
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles size={12} strokeWidth={1.5} className="text-[#c5e063]" />
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+              Gotowe
+            </span>
+          </div>
+          <h1 className="text-2xl font-semibold text-white mb-3">
+            Profil gotowy!
+          </h1>
+          <p className="text-sm text-white/40 font-light leading-relaxed mb-8">
+            Twój trener AI zna już Twój sport, cele i możliwości treningowe. Na tej podstawie będzie personalizować plany i porady specjalnie dla Ciebie.
+          </p>
+
+          {/* Covered topics summary */}
+          <div className="flex flex-wrap gap-1.5 justify-center mb-10">
+            {TOPICS.filter((t) => topicsCovered[t.key]).map((t) => (
+              <span
+                key={t.key}
+                className="rounded-full bg-[#c5e063]/10 border border-[#c5e063]/20 px-3 py-1 text-xs text-[#c5e063]/80"
+              >
+                {t.label}
+              </span>
+            ))}
+          </div>
+
+          <button
+            onClick={handleEnterApp}
+            className="w-full rounded-2xl bg-[#c5e063] px-6 py-4 text-sm font-semibold text-black transition-all hover:bg-[#d4ef72] active:scale-[0.98]"
+          >
+            Przejdź do aplikacji
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950">
       <div
         className="relative flex w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl"
-        style={{ height: "min(100vh, 900px)" }}
+        style={{ height: "min(100dvh, 900px)" }}
       >
         {/* Header with progress */}
         <div className="shrink-0 border-b border-white/[0.06] px-5 pt-6 pb-4">
@@ -116,7 +182,7 @@ export default function OnboardingPage() {
               <div
                 key={t.key}
                 className={cn(
-                  "h-1 flex-1 rounded-full transition-colors",
+                  "h-1 flex-1 rounded-full transition-colors duration-500",
                   topicsCovered[t.key] ? "bg-[#c5e063]" : "bg-white/10",
                 )}
                 title={t.label}
@@ -142,6 +208,29 @@ export default function OnboardingPage() {
                 <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-[#111111] border border-white/[0.1] px-5 py-3 text-sm text-white/40 font-light">
                   <Loader2 size={14} strokeWidth={1} className="animate-spin text-white/30" />
                   <span className="animate-pulse">Analizuje...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error state with retry */}
+            {sendMutation.isError && !sendMutation.isPending && (
+              <div className="flex items-start gap-3 mt-4">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-500/10 border border-red-500/20">
+                  <AlertCircle size={14} strokeWidth={1.5} className="text-red-400" />
+                </div>
+                <div className="flex flex-col gap-2 rounded-2xl rounded-bl-sm bg-red-500/5 border border-red-500/20 px-4 py-3">
+                  <p className="text-sm text-red-300/80 font-light">
+                    Coś poszło nie tak. Spróbuj ponownie.
+                  </p>
+                  {lastFailedContent && (
+                    <button
+                      onClick={handleRetry}
+                      className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors"
+                    >
+                      <RotateCcw size={11} strokeWidth={1.5} />
+                      Wyślij ponownie
+                    </button>
+                  )}
                 </div>
               </div>
             )}

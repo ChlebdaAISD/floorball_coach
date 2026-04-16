@@ -27,14 +27,13 @@ export const session = pgTable("session", {
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
+  email: text("email").unique(), // nullable for backward compat with existing accounts
   passwordHash: text("password_hash").notNull(),
-  bio: text("bio"),
   trainingGoal: text("training_goal"),
   seasonStart: date("season_start"),
   seasonEnd: date("season_end"),
   offSeasonStart: date("off_season_start"),
   offSeasonEnd: date("off_season_end"),
-  interviewAnswers: text("interview_answers"), // Store as text string for easier AI parsing
   onboardingComplete: boolean("onboarding_complete").notNull().default(false),
   onboardingProgress: jsonb("onboarding_progress"), // {"sport":true,"goals":true,"body":false,...}
 });
@@ -66,6 +65,7 @@ export const insertExerciseSchema = createInsertSchema(exercises).omit({
 // ─── 3. Training Plans ─────────────────────────────────────
 export const trainingPlans = pgTable("training_plans", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   phase: text("phase").notNull(), // phase_0 | phase_1 | phase_2 | in_season
   description: text("description"),
@@ -118,6 +118,7 @@ export const insertPlannedExerciseSchema = createInsertSchema(
 // ─── 6. Calendar Events ────────────────────────────────────
 export const calendarEvents = pgTable("calendar_events", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
   time: text("time"), // "20:00"
   eventType: text("event_type").notNull(), // gym | floorball_training | floorball_match | running | rest | other
@@ -140,6 +141,7 @@ export const insertCalendarEventSchema = createInsertSchema(
 // ─── 7. Readiness Logs ─────────────────────────────────────
 export const readinessLogs = pgTable("readiness_logs", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
   trainingReadiness: integer("training_readiness"), // 0-100
   bodyBattery: integer("body_battery"), // 0-100
@@ -159,6 +161,7 @@ export const insertReadinessLogSchema = createInsertSchema(readinessLogs).omit({
 // ─── 8. Workout Logs ───────────────────────────────────────
 export const workoutLogs = pgTable("workout_logs", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
   workoutType: text("workout_type").notNull(), // gym | floorball | running
   calendarEventId: integer("calendar_event_id").references(
@@ -220,6 +223,7 @@ export const insertExerciseLogSchema = createInsertSchema(exerciseLogs).omit({
 // ─── 10. Chat Messages ─────────────────────────────────────
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull(), // user | assistant
   content: text("content").notNull(),
   planSuggestion: jsonb("plan_suggestion"),
@@ -236,6 +240,7 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 // ─── 11. Weekly Summaries ──────────────────────────────────
 export const weeklySummaries = pgTable("weekly_summaries", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().default(1).references(() => users.id, { onDelete: "cascade" }),
   weekStart: date("week_start").notNull(),
   weekEnd: date("week_end").notNull(),
   gymSessions: integer("gym_sessions").notNull().default(0),
@@ -270,6 +275,7 @@ export const athleteProfiles = pgTable("athlete_profiles", {
   trainingDaysPerWeek: integer("training_days_per_week"),
   availableFacilities: jsonb("available_facilities"), // ["gym", "pool", "home", "outdoor"]
   fixedWeeklySchedule: jsonb("fixed_weekly_schedule"), // [{"day":"tuesday","time":"20:00","type":"team_practice"}]
+  bio: text("bio"), // Przeniesione z users.bio
   additionalNotes: text("additional_notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

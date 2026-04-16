@@ -41,6 +41,22 @@ function getGenAI() {
   return new GoogleGenerativeAI(apiKey);
 }
 
+/** Wraps model.generateContent with a 30-second timeout */
+async function generateWithTimeout(
+  model: ReturnType<InstanceType<typeof GoogleGenerativeAI>["getGenerativeModel"]>,
+  prompt: string,
+  timeoutMs = 30_000,
+): Promise<string> {
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Gemini timeout po 30 sekundach")), timeoutMs)
+  );
+  const result = await Promise.race([
+    model.generateContent(prompt),
+    timeoutPromise,
+  ]);
+  return result.response.text();
+}
+
 // ─── System Prompt Builder ─────────────────────────────────
 async function buildSystemPrompt(userId: number): Promise<string> {
   const [profileRow] = await db
@@ -79,7 +95,7 @@ async function buildSystemPrompt(userId: number): Promise<string> {
         .join(", ");
       prompt += `\n- Stały grafik: ${schedule}`;
     }
-    if (userRow?.bio) prompt += `\n- Profil: ${userRow.bio}`;
+    if (profileRow?.bio) prompt += `\n- Profil: ${profileRow.bio}`;
     if (userRow?.trainingGoal) prompt += `\n- Cel główny: ${userRow.trainingGoal}`;
     if (userRow?.seasonStart || userRow?.seasonEnd) {
       prompt += `\n- Sezon: od ${userRow.seasonStart || "?"} do ${userRow.seasonEnd || "?"}`;
@@ -286,8 +302,7 @@ Jeśli NIE proponujesz zmian ANI nie wykrywasz kontuzji, odpowiedz NORMALNYM TEK
 
 Wiadomość zawodnika: ${userMessage}`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithTimeout(model, prompt);
 
   function tryExtract(raw: string): { text: string; planSuggestion?: unknown; injuryUpdate?: unknown } | null {
     // 1. Try parsing the whole thing as JSON (after stripping fences)
@@ -415,8 +430,7 @@ Odpowiedz WYŁĄCZNIE w formacie JSON:
   ]
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithTimeout(model, prompt);
 
   try {
     const cleaned = stripJsonFences(response);
@@ -559,8 +573,7 @@ Reguły:
 - "is_complete": true TYLKO gdy pokryto WSZYSTKIE tematy i użytkownik potwierdził podsumowanie
 - Jeśli brak danych do wyciągnięcia, daj "extracted_data": {}`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithTimeout(model, prompt);
 
   try {
     const cleaned = stripJsonFences(response);
@@ -619,8 +632,7 @@ Format JSON:
   "injury_update": { "body_part": "...", "injury_type": "...", "severity": "...", "description": "...", "is_active": true } // pomiń jeśli brak
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await generateWithTimeout(model, prompt);
 
   try {
     const cleaned = stripJsonFences(response);
