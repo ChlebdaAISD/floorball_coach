@@ -79,6 +79,10 @@ export default function TodayPage() {
     queryFn: () => apiRequest("/api/readiness/today"),
   });
 
+  const [savedWorkoutId, setSavedWorkoutId] = useState<number | null>(null);
+  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   if (isLoadingEvents || isLoadingReadiness) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -86,10 +90,6 @@ export default function TodayPage() {
       </div>
     );
   }
-
-  const [savedWorkoutId, setSavedWorkoutId] = useState<number | null>(null);
-  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const goBack = () => {
     setStep("events");
