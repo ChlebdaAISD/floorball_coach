@@ -31,7 +31,6 @@ export function PullToRefresh({ children, scrollContainerId = "scroll-container"
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!isPullingRef.current || startYRef.current === null) return;
     if (getScrollTop() > 0) {
-      // User scrolled, cancel pull gesture
       startYRef.current = null;
       isPullingRef.current = false;
       setPullDistance(0);
@@ -40,7 +39,7 @@ export function PullToRefresh({ children, scrollContainerId = "scroll-container"
 
     const delta = e.touches[0].clientY - startYRef.current;
     if (delta > 0) {
-      // Rubber-band effect: diminishing returns after threshold
+      // Rubber-band effect
       const clamped = Math.min(delta * 0.5, THRESHOLD * 1.2);
       setPullDistance(clamped);
     }
@@ -51,60 +50,56 @@ export function PullToRefresh({ children, scrollContainerId = "scroll-container"
     isPullingRef.current = false;
     startYRef.current = null;
 
-    if (pullDistance >= THRESHOLD * 0.7 && !isRefreshing) {
+    const dist = pullDistance;
+    setPullDistance(0);
+
+    if (dist >= THRESHOLD * 0.7 && !isRefreshing) {
       setIsRefreshing(true);
-      setPullDistance(0);
       try {
         await queryClient.invalidateQueries();
       } finally {
         setIsRefreshing(false);
       }
-    } else {
-      setPullDistance(0);
     }
   }, [pullDistance, isRefreshing, queryClient]);
 
   const indicatorOpacity = Math.min(pullDistance / (THRESHOLD * 0.7), 1);
   const indicatorRotation = (pullDistance / THRESHOLD) * 360;
+  const showIndicator = pullDistance > 4 || isRefreshing;
 
   return (
     <div
-      className="relative flex flex-col flex-1 overflow-hidden"
+      className="relative flex flex-col flex-1 min-h-0"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Pull indicator */}
-      {(pullDistance > 0 || isRefreshing) && (
+      {/* Pull indicator — absolutely positioned above content */}
+      {showIndicator && (
         <div
           className="absolute top-0 left-0 right-0 z-10 flex items-center justify-center pointer-events-none"
           style={{
-            height: `${Math.max(pullDistance, isRefreshing ? 40 : 0)}px`,
+            height: 40,
             opacity: isRefreshing ? 1 : indicatorOpacity,
-            transition: pullDistance === 0 ? "height 0.2s ease, opacity 0.2s ease" : "none",
           }}
         >
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 border border-white/20"
-            style={{
-              transform: isRefreshing ? "none" : `rotate(${indicatorRotation}deg)`,
-            }}
-          >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 border border-white/20">
             <RotateCcw
               size={14}
               strokeWidth={1.5}
               className={`text-white/60 ${isRefreshing ? "animate-spin" : ""}`}
+              style={!isRefreshing ? { transform: `rotate(${indicatorRotation}deg)` } : undefined}
             />
           </div>
         </div>
       )}
 
-      {/* Content shifted down during pull */}
+      {/* Content — shifted down during pull */}
       <div
-        className="flex-1 overflow-hidden"
+        className="flex flex-col flex-1 min-h-0"
         style={{
-          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : "none",
-          transition: pullDistance === 0 ? "transform 0.2s ease" : "none",
+          transform: pullDistance > 0 ? `translateY(${pullDistance}px)` : undefined,
+          transition: pullDistance === 0 ? "transform 0.2s ease" : undefined,
         }}
       >
         {children}
