@@ -6,12 +6,13 @@ import CalendarPage from "@/pages/CalendarPage";
 import ChatPage from "@/pages/ChatPage";
 import DashboardPage from "@/pages/DashboardPage";
 import HistoryPage from "@/pages/HistoryPage";
+import OnboardingPage from "@/pages/OnboardingPage";
 import { BottomNav } from "@/components/BottomNav";
 import { SettingsModal } from "@/components/SettingsModal";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 
 export default function App() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, needsOnboarding } = useAuth();
 
   if (isLoading) {
     return (
@@ -23,6 +24,10 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  if (needsOnboarding) {
+    return <OnboardingPage />;
   }
 
   return (

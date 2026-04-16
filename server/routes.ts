@@ -14,14 +14,24 @@ import {
   exerciseLogs,
   chatMessages,
   weeklySummaries,
+  athleteProfiles,
+  injuries,
 } from "../shared/schema";
 import type {
   InsertCalendarEvent,
   InsertWorkoutLog,
   InsertExerciseLog,
   InsertReadinessLog,
+  InsertAthleteProfile,
+  InsertInjury,
 } from "../shared/schema";
-import { analyzeReadiness, chatWithCoach } from "./gemini";
+import {
+  analyzeReadiness,
+  chatWithCoach,
+  chatOnboarding,
+  analyzeWorkout,
+  ONBOARDING_TOPICS,
+} from "./gemini";
 
 /** Return today's date as YYYY-MM-DD in Europe/Warsaw timezone */
 function todayInWarsaw(): string {
@@ -81,6 +91,8 @@ export function registerRoutes(app: Express) {
         offSeasonStart: users.offSeasonStart,
         offSeasonEnd: users.offSeasonEnd,
         interviewAnswers: users.interviewAnswers,
+        onboardingComplete: users.onboardingComplete,
+        onboardingProgress: users.onboardingProgress,
       })
       .from(users)
       .where(eq(users.id, req.session.userId!));
@@ -600,20 +612,27 @@ export function registerRoutes(app: Express) {
   app.post("/api/chat", requireAuth, async (req, res) => {
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: "Brak wiadomości" });
+    const userId = req.session.userId!;
 
     // Save user message
-    await db.insert(chatMessages).values({ role: "user", content });
+    await db.insert(chatMessages).values({ role: "user", content, contextType: "chat" });
 
     try {
-      const response = await chatWithCoach(content);
+      const response = await chatWithCoach(content, userId);
 
-      // Save assistant message with planSuggestion
+      // Auto-upsert injury if AI detected one
+      if (response.injuryUpdate) {
+        await upsertInjuryFromAi(userId, response.injuryUpdate, "chat");
+      }
+
       const [saved] = await db
         .insert(chatMessages)
         .values({
           role: "assistant",
           content: response.text,
           planSuggestion: response.planSuggestion || null,
+          contextType: "chat",
+          extractedData: response.injuryUpdate ? { injury: response.injuryUpdate } : null,
         })
         .returning();
 
@@ -625,11 +644,300 @@ export function registerRoutes(app: Express) {
         .values({
           role: "assistant",
           content: "Przepraszam, wystąpił błąd podczas analizy. Spróbuj ponownie.",
+          contextType: "chat",
         })
         .returning();
       res.json(saved);
     }
   });
 
+  // ─── Athlete Profile ────────────────────────────────────
+  app.get("/api/profile", requireAuth, async (req, res) => {
+    const [profile] = await db
+      .select()
+      .from(athleteProfiles)
+      .where(eq(athleteProfiles.userId, req.session.userId!))
+      .limit(1);
+    res.json(profile || null);
+  });
 
+  app.put("/api/profile", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const updated = await upsertAthleteProfile(userId, req.body);
+    res.json(updated);
+  });
+
+  // ─── Injuries ───────────────────────────────────────────
+  app.get("/api/injuries", requireAuth, async (req, res) => {
+    const activeOnly = req.query.active === "true";
+    const userId = req.session.userId!;
+    let rows;
+    if (activeOnly) {
+      rows = await db
+        .select()
+        .from(injuries)
+        .where(and(eq(injuries.userId, userId), eq(injuries.isActive, true)))
+        .orderBy(desc(injuries.createdAt));
+    } else {
+      rows = await db
+        .select()
+        .from(injuries)
+        .where(eq(injuries.userId, userId))
+        .orderBy(desc(injuries.createdAt));
+    }
+    res.json(rows);
+  });
+
+  app.post("/api/injuries", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const data: InsertInjury = { ...req.body, userId, source: req.body.source || "manual" };
+    const [inserted] = await db.insert(injuries).values(data).returning();
+    res.status(201).json(inserted);
+  });
+
+  app.put("/api/injuries/:id", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(injuries)
+      .set({ ...req.body, updatedAt: new Date() })
+      .where(and(eq(injuries.id, id), eq(injuries.userId, req.session.userId!)))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Nie znaleziono" });
+    res.json(updated);
+  });
+
+  app.delete("/api/injuries/:id", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    await db
+      .delete(injuries)
+      .where(and(eq(injuries.id, id), eq(injuries.userId, req.session.userId!)));
+    res.status(204).end();
+  });
+
+  // ─── Onboarding ─────────────────────────────────────────
+  app.get("/api/onboarding/messages", requireAuth, async (_req, res) => {
+    const msgs = await db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.contextType, "onboarding"))
+      .orderBy(chatMessages.createdAt);
+    res.json(msgs);
+  });
+
+  app.post("/api/onboarding/chat", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const { content } = req.body;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (user?.onboardingComplete) {
+      return res.status(400).json({ error: "Onboarding już zakończony" });
+    }
+
+    // Save user message (unless this is the initial trigger with no content)
+    if (content) {
+      await db.insert(chatMessages).values({
+        role: "user",
+        content,
+        contextType: "onboarding",
+      });
+    }
+
+    const coveredTopics = (user?.onboardingProgress as Record<string, boolean>) || {};
+
+    try {
+      const response = await chatOnboarding(content || null, userId, coveredTopics);
+
+      // Apply extracted data
+      if (response.extractedData) {
+        const { profile, user: userUpdate, injuries: extractedInjuries } = response.extractedData;
+        if (profile && Object.keys(profile).length > 0) {
+          await upsertAthleteProfile(userId, profile);
+        }
+        if (userUpdate && Object.keys(userUpdate).length > 0) {
+          // Normalize empty strings to null for date fields
+          const cleanedUpdate: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(userUpdate)) {
+            cleanedUpdate[k] = v === "" ? null : v;
+          }
+          await db.update(users).set(cleanedUpdate).where(eq(users.id, userId));
+        }
+        if (Array.isArray(extractedInjuries) && extractedInjuries.length > 0) {
+          for (const inj of extractedInjuries) {
+            await upsertInjuryFromAi(userId, inj, "onboarding");
+          }
+        }
+      }
+
+      // Update topics covered
+      const newCovered = { ...coveredTopics };
+      for (const topic of response.topicsCovered || []) {
+        if ((ONBOARDING_TOPICS as readonly string[]).includes(topic)) {
+          newCovered[topic] = true;
+        }
+      }
+      await db
+        .update(users)
+        .set({
+          onboardingProgress: newCovered,
+          ...(response.isComplete ? { onboardingComplete: true } : {}),
+        })
+        .where(eq(users.id, userId));
+
+      const [saved] = await db
+        .insert(chatMessages)
+        .values({
+          role: "assistant",
+          content: response.text,
+          contextType: "onboarding",
+          extractedData: response.extractedData || null,
+        })
+        .returning();
+
+      res.json({
+        message: saved,
+        topicsCovered: newCovered,
+        isComplete: response.isComplete === true,
+      });
+    } catch (err) {
+      console.error("Onboarding chat error:", err);
+      res.status(500).json({ error: "Błąd podczas rozmowy onboardingowej" });
+    }
+  });
+
+  app.post("/api/onboarding/complete", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const [updated] = await db
+      .update(users)
+      .set({ onboardingComplete: true })
+      .where(eq(users.id, userId))
+      .returning();
+    res.json({ onboardingComplete: updated?.onboardingComplete === true });
+  });
+
+  app.post("/api/onboarding/reset", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    await db
+      .update(users)
+      .set({ onboardingComplete: false, onboardingProgress: {} })
+      .where(eq(users.id, userId));
+    // Clear onboarding chat history
+    await db.delete(chatMessages).where(eq(chatMessages.contextType, "onboarding"));
+    res.json({ ok: true });
+  });
+
+  // ─── Post-Workout AI Analysis ───────────────────────────
+  app.post("/api/workouts/:id/analyze", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const userId = req.session.userId!;
+
+    const [workout] = await db
+      .select()
+      .from(workoutLogs)
+      .where(eq(workoutLogs.id, id));
+    if (!workout) return res.status(404).json({ error: "Nie znaleziono treningu" });
+
+    try {
+      const analysis = await analyzeWorkout(id, userId);
+
+      if (analysis.injuryUpdate) {
+        await upsertInjuryFromAi(userId, analysis.injuryUpdate, "chat");
+      }
+
+      const [updated] = await db
+        .update(workoutLogs)
+        .set({ aiFeedback: analysis.feedback })
+        .where(eq(workoutLogs.id, id))
+        .returning();
+
+      res.json({ workout: updated, analysis });
+    } catch (err) {
+      console.error("Workout analysis failed:", err);
+      res.status(500).json({ error: "Błąd podczas analizy treningu" });
+    }
+  });
+
+}
+
+// ─── Helpers: upsert logic ─────────────────────────────────
+async function upsertAthleteProfile(
+  userId: number,
+  patch: Partial<InsertAthleteProfile>,
+): Promise<typeof athleteProfiles.$inferSelect> {
+  const [existing] = await db
+    .select()
+    .from(athleteProfiles)
+    .where(eq(athleteProfiles.userId, userId))
+    .limit(1);
+
+  // Strip undefined/null-coerce for cleaner diff
+  const cleanPatch: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) cleanPatch[k] = v;
+  }
+
+  if (existing) {
+    const [updated] = await db
+      .update(athleteProfiles)
+      .set({ ...cleanPatch, updatedAt: new Date() })
+      .where(eq(athleteProfiles.userId, userId))
+      .returning();
+    return updated;
+  } else {
+    const [inserted] = await db
+      .insert(athleteProfiles)
+      .values({ userId, ...cleanPatch } as InsertAthleteProfile)
+      .returning();
+    return inserted;
+  }
+}
+
+async function upsertInjuryFromAi(
+  userId: number,
+  injuryData: unknown,
+  source: "onboarding" | "chat" | "manual",
+): Promise<void> {
+  if (!injuryData || typeof injuryData !== "object") return;
+  const data = injuryData as Record<string, unknown>;
+
+  // Accept both snake_case (from AI JSON) and camelCase
+  const bodyPart = (data.body_part || data.bodyPart) as string | undefined;
+  if (!bodyPart) return;
+
+  const record = {
+    userId,
+    bodyPart,
+    injuryType: (data.injury_type || data.injuryType) as string | undefined,
+    severity: data.severity as string | undefined,
+    description: data.description as string | undefined,
+    dateOccurred: (data.date_occurred || data.dateOccurred) as string | undefined,
+    isActive: data.is_active !== undefined ? Boolean(data.is_active) : data.isActive !== undefined ? Boolean(data.isActive) : true,
+    managementNotes: (data.management_notes || data.managementNotes) as string | undefined,
+    source,
+  };
+
+  // Check for existing active injury on same body part — update instead of creating duplicate
+  const [existing] = await db
+    .select()
+    .from(injuries)
+    .where(
+      and(
+        eq(injuries.userId, userId),
+        eq(injuries.bodyPart, bodyPart),
+        eq(injuries.isActive, true),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (record.injuryType) patch.injuryType = record.injuryType;
+    if (record.severity) patch.severity = record.severity;
+    if (record.description) patch.description = record.description;
+    if (record.managementNotes) patch.managementNotes = record.managementNotes;
+    // If AI indicates resolved, mark inactive
+    if (record.isActive === false) patch.isActive = false;
+    await db.update(injuries).set(patch).where(eq(injuries.id, existing.id));
+  } else {
+    await db.insert(injuries).values(record as InsertInjury);
+  }
 }

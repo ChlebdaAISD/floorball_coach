@@ -1,0 +1,37 @@
+## Summary
+
+Solid overall structure with good auth discipline on new endpoints, but there are several correctness bugs and one high-severity security issue that must be addressed before production use.
+
+---
+
+## Issues
+
+- **[severity: high] Security** — `buildContext()` in `gemini.ts` is not scoped to a user. All DB queries against `readinessLogs`, `workoutLogs`, `calendarEvents`, `chatMessages`, and `weeklySummaries` have no `userId` filter (the function does not accept a `userId` parameter). In a single-user app this is currently harmless, but `buildSystemPrompt` correctly accepts and uses `userId` while `buildContext` silently fetches all rows from the entire table. If a second user is ever added — or if a test/admin account exists — any user's AI context will contain every other user's data. The fix is to pass `userId` into `buildContext` and add `eq(table.userId, userId)` to each query. This is a latent IDOR that requires zero effort to exploit.
+
+- **[severity: high] Correctness** — `PUT /api/calendar/events/:id` and `PUT /api/planned-exercises/:id` update rows by ID with no ownership check. Any authenticated user can modify calendar events or planned exercises they did not create. In a single-user app this is low practical risk today, but the pattern is inconsistent with how injuries are protected (`and(eq(injuries.id, id), eq(injuries.userId, ...))`). The calendar and planned-exercise endpoints should follow the same pattern.
+
+- **[severity: high] Security** — `PUT /api/calendar/events/:id` does `db.update(calendarEvents).set(req.body)`. The entire request body is passed directly to Drizzle with no field whitelist. A caller can supply any column name including `trainingDayId`, `workoutLogId`, `source`, `createdAt`, or any future column and Drizzle will apply it. The same issue exists in `POST /api/calendar/apply-suggestion` for the `modify` action: `updates` is built from AI-provided fields, and while only whitelisted keys (`title`, `eventType`, `time`, `date`) are copied, the fact that `req.body` is passed raw to the general `PUT` route means a crafted frontend call can overwrite protected fields.
+
+- **[severity: medium] Correctness** — `analyzeWorkout` in `gemini.ts` fetches the workout by `workoutLogId` but does **not** verify that `workout.userId` (if such a field existed) or any ownership relationship belongs to `resolvedUserId`. More concretely: the route `POST /api/workouts/:id/analyze` fetches the workout and checks it exists, but then calls `analyzeWorkout(id, userId)` which re-fetches the same workout independently. The workout fetch inside `analyzeWorkout` has no user scope — it will happily analyze any workout ID. Combined with the lack of user-scoping in `buildContext`, the AI prompt for any workout analysis leaks all users' readiness/workout history. Same root cause as the `buildContext` issue.
+
+- **[severity: medium] Correctness** — In `upsertInjuryFromAi`, when an existing active injury is found and `record.isActive === false` is set, `patch.isActive = false` is applied. However, when the AI sends `is_active: false` for a body part that has **no** existing active injury, the function falls through to `db.insert(injuries).values(record)` and inserts a new injury row with `isActive: false`. This creates a resolved-but-never-active injury record that will never appear in active injury queries but pollutes the table. The fix is to skip the insert entirely when `record.isActive === false` and no existing record was found.
+
+- **[severity: medium] Correctness** — Race condition in `POST /api/onboarding/chat`. Two concurrent requests (e.g., rapid double-tap on mobile) will both read `user.onboardingProgress`, both call `chatOnboarding` in parallel, and both write back a `newCovered` object derived from their own stale read. Whichever write lands second overwrites the first. The covered topics from one request can be silently lost. In a single-user app the window is small but real. A database-level merge (`jsonb_strip_nulls`, `||` operator in Postgres) or an in-memory request mutex would close this.
+
+- **[severity: medium] Correctness** — `buildContext("onboarding")` uses `config = { readinessDays: 0, workoutDays: 0, calendarDays: 0, chatLimit: 15 }` which correctly skips readiness/workout/calendar data. However the chat history query inside `buildContext` has **no** `contextType = 'onboarding'` filter. It fetches the 15 most recent messages from *all* context types. In practice `chatOnboarding` also independently fetches onboarding-scoped messages (lines 510-515 of gemini.ts), so the onboarding call never calls `buildContext` — but `buildContext("onboarding")` exists and is callable, and its chat history would be wrong if ever used. Not a current bug, but a correctness trap.
+
+- **[severity: medium] Security / AI hallucination** — `upsertInjuryFromAi` writes AI-provided strings (`bodyPart`, `injuryType`, `severity`, `description`, `managementNotes`) directly to the database with no length limits or validation. The schema columns are unbounded `text`. An adversarial or hallucinating AI response could write multi-megabyte strings into these fields. The route saves them without any sanitization. At minimum, enforce a reasonable max length (e.g., 500 chars) on `description` and `managementNotes` before insert/update.
+
+- **[severity: medium] Correctness** — In `upsertAthleteProfile`, the `cleanPatch` loop strips `undefined` values but allows `null` through. This means an AI response that explicitly sets a field to `null` will zero-out a previously set value (e.g., `weightKg: null` wipes the weight). During onboarding this is unlikely, but during general profile updates via `PUT /api/profile` a client sending `{ "weightKg": null }` would silently clear the field. Whether this is intentional is unclear from the code, but it differs from the `undefined`-skipping behavior and should be explicit.
+
+- **[severity: low] Correctness** — `stripJsonFences` uses the regex `/```json\n?|\n?```/g` which will also strip any triple-backtick code block that is *not* a JSON fence. For example, if the AI returns markdown with a Python code block inside the `"text"` field, the backticks will be stripped and the JSON will be corrupted before `JSON.parse` is called. This is unlikely in practice given the strict JSON-only prompt format, but the regex is broader than intended. A more precise pattern like `/^```json\s*\n|\n\s*```$/gm` would be safer.
+
+- **[severity: low] Correctness** — `POST /api/onboarding/reset` deletes `chatMessages` where `contextType = 'onboarding'` with no user scope. Since `chatMessages` has no `userId` column (confirmed in schema), this is unavoidable — but it means in any future multi-user scenario, one user's reset wipes all users' onboarding history. Worth noting as a schema gap.
+
+- **[severity: low] Correctness** — `analyzeReadiness` in `gemini.ts` does not pass `userId` to the `model.generateContent` call context — it builds the system prompt correctly with `resolvedUserId` but uses `buildContext("readiness")` which, as noted above, has no user scope. Same root cause as the high-severity issue.
+
+---
+
+## Verdict
+
+NEEDS CHANGES — two high-severity issues (unbounded `req.body` passed to `db.update`, and no user-scoping in `buildContext`) must be fixed before this can be considered safe even in a single-user deployment. The AI-hallucination-to-DB pipeline also needs input length guards.

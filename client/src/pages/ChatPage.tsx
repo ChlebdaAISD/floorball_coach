@@ -36,7 +36,9 @@ export default function ChatPage() {
         role: "user",
         content: newContent,
         createdAt: new Date() as any,
-        planSuggestion: null
+        planSuggestion: null,
+        contextType: "chat",
+        extractedData: null,
       };
 
       queryClient.setQueryData<ChatMessage[]>(["chat"], (old) => [...(old || []), optimisticMessage]);

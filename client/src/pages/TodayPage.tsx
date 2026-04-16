@@ -87,19 +87,66 @@ export default function TodayPage() {
     );
   }
 
-  const goBack = () => { setStep("events"); setSelectedEvent(null); };
+  const [savedWorkoutId, setSavedWorkoutId] = useState<number | null>(null);
+  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const onWorkoutSaved = () => {
+  const goBack = () => {
+    setStep("events");
+    setSelectedEvent(null);
+    setSavedWorkoutId(null);
+    setAiFeedback(null);
+    setIsAnalyzing(false);
+  };
+
+  const analyzeMutation = useMutation({
+    mutationFn: (workoutId: number) =>
+      apiRequest<{ analysis: { feedback: string } }>(`/api/workouts/${workoutId}/analyze`, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      setAiFeedback(data.analysis?.feedback || null);
+      setIsAnalyzing(false);
+    },
+    onError: () => {
+      setIsAnalyzing(false);
+    },
+  });
+
+  const onWorkoutSaved = (workoutId: number) => {
     queryClient.invalidateQueries({ queryKey: ["today-events"] });
+    setSavedWorkoutId(workoutId);
     setStep("done");
+    // Fire-and-forget AI analysis
+    setIsAnalyzing(true);
+    analyzeMutation.mutate(workoutId);
   };
 
   if (step === "done") {
     return (
-      <div className="flex flex-col items-center justify-center px-4 pt-20">
+      <div className="flex flex-col items-center justify-center px-4 pt-16 pb-8">
         <CheckCircle2 className="mb-4 h-16 w-16 text-[#c5e063]" strokeWidth={1} />
         <h2 className="mb-2 text-xl font-semibold tracking-wide">Zapisano</h2>
         <p className="text-white/40 text-sm tracking-wide">Dobra robota.</p>
+
+        {/* AI feedback card */}
+        {(isAnalyzing || aiFeedback) && (
+          <div className="mt-8 w-full max-w-sm rounded-2xl border border-white/[0.12] bg-[#111111] p-5">
+            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-[#c5e063]">
+              <Activity size={12} strokeWidth={1.5} />
+              Feedback trenera
+            </p>
+            {isAnalyzing ? (
+              <div className="flex items-center gap-2 text-sm text-white/40 font-light">
+                <Loader2 size={14} strokeWidth={1} className="animate-spin" />
+                <span className="animate-pulse">Analizuję trening...</span>
+              </div>
+            ) : aiFeedback ? (
+              <p className="text-sm text-white/80 font-light whitespace-pre-wrap leading-relaxed">{aiFeedback}</p>
+            ) : null}
+          </div>
+        )}
+
         <button onClick={goBack} className="mt-8 rounded-full border border-white/20 px-8 py-3 text-sm font-semibold tracking-wide hover:border-white/40 transition-colors">
           Powrót
         </button>
@@ -382,7 +429,7 @@ function CompletionSummary({ data }: { data: Record<string, any> }) {
 }
 
 // ─── Zone Stats Form (unihokej + bieg) ───────────────────────
-function ZoneStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: () => void; onBack: () => void }) {
+function ZoneStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: (workoutId: number) => void; onBack: () => void }) {
   const savedData = parseNotes(event.notes);
   const initialZones = savedData?.zones ?? { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const initialRpe = savedData?.rpe ?? 6;
@@ -393,8 +440,8 @@ function ZoneStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; on
   const [notes, setNotes] = useState<string>(initialNotes);
 
   const mutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: onComplete,
+    mutationFn: (data: any) => apiRequest<{ id: number }>("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (result) => onComplete(result.id),
   });
 
   const totalTime = Object.values(zones).reduce((s, v) => s + (v || 0), 0);
@@ -468,14 +515,14 @@ function ZoneStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; on
 }
 
 // ─── Gym Quick Complete ───────────────────────────────────────
-function QuickCompleteForm({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: () => void; onBack: () => void }) {
+function QuickCompleteForm({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: (workoutId: number) => void; onBack: () => void }) {
   const savedData = parseNotes(event.notes);
   const [rpe, setRpe] = useState<number>(savedData?.rpe ?? 6);
   const [notes, setNotes] = useState<string>(savedData?.sessionNotes ?? "");
 
   const mutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: onComplete,
+    mutationFn: (data: any) => apiRequest<{ id: number }>("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (result) => onComplete(result.id),
   });
 
   return (
@@ -512,7 +559,7 @@ function QuickCompleteForm({ event, onComplete, onBack }: { event: CalendarEvent
 }
 
 // ─── Gym Workout (exercise checklist) ────────────────────────
-function GymWorkout({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: () => void; onBack: () => void }) {
+function GymWorkout({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: (workoutId: number) => void; onBack: () => void }) {
   // Parse exercises from event description JSON
   const descPlan = (() => { try { const d = JSON.parse(event.description || "{}"); return d.plan ?? null; } catch { return null; } })();
   // Load saved state from event notes
@@ -524,8 +571,8 @@ function GymWorkout({ event, onComplete, onBack }: { event: CalendarEvent; onCom
   const [notes, setNotes] = useState<string>(savedData?.sessionNotes ?? "");
 
   const mutation = useMutation({
-    mutationFn: (data: any) => apiRequest("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: onComplete,
+    mutationFn: (data: any) => apiRequest<{ id: number }>("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (result) => onComplete(result.id),
   });
 
   // No plan in description → fall back to quick form

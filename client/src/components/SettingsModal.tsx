@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/utils";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, RotateCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { useSettings } from "@/contexts/SettingsContext";
+import type { AthleteProfile, Injury } from "@shared/schema";
 
 interface UserProfile {
   id: number;
@@ -61,6 +62,28 @@ export function SettingsModal() {
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(["auth"], data);
+      closeSettings();
+    },
+  });
+
+  const { data: profile } = useQuery<AthleteProfile | null>({
+    queryKey: ["profile"],
+    queryFn: () => apiRequest("/api/profile"),
+    enabled: isOpen,
+  });
+
+  const { data: activeInjuries = [] } = useQuery<Injury[]>({
+    queryKey: ["injuries", "active"],
+    queryFn: () => apiRequest("/api/injuries?active=true"),
+    enabled: isOpen,
+  });
+
+  const resetOnboardingMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/onboarding/reset", { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auth"] });
+      queryClient.invalidateQueries({ queryKey: ["onboarding-messages"] });
       closeSettings();
     },
   });
@@ -175,10 +198,117 @@ export function SettingsModal() {
               >
                 {mutation.isPending ? "Zapisywanie..." : "Zapisz Profil"}
               </Button>
+
+              {/* Athlete profile (read-only, from onboarding) */}
+              {profile && (
+                <>
+                  <div className="h-px bg-white/[0.08]" />
+                  <div className="space-y-6">
+                    <h3 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase">Dane zawodnika (z onboardingu)</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {profile.sport && (
+                        <InfoRow label="Sport" value={profile.sport + (profile.sportPosition ? ` · ${profile.sportPosition}` : "")} />
+                      )}
+                      {profile.experienceYears !== null && profile.experienceYears !== undefined && (
+                        <InfoRow label="Doświadczenie" value={`${profile.experienceYears} lat`} />
+                      )}
+                      {profile.age !== null && profile.age !== undefined && (
+                        <InfoRow label="Wiek" value={`${profile.age} lat`} />
+                      )}
+                      {profile.heightCm && <InfoRow label="Wzrost" value={`${profile.heightCm} cm`} />}
+                      {profile.weightKg && <InfoRow label="Waga" value={`${profile.weightKg} kg`} />}
+                      {profile.gymExperienceLevel && (
+                        <InfoRow label="Poziom gym" value={profile.gymExperienceLevel} />
+                      )}
+                      {profile.trainingDaysPerWeek && (
+                        <InfoRow label="Treningi/tydz." value={String(profile.trainingDaysPerWeek)} />
+                      )}
+                    </div>
+                    {Array.isArray(profile.availableFacilities) && profile.availableFacilities.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">Dostępne warunki</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(profile.availableFacilities as string[]).map((f) => (
+                            <span key={f} className="rounded-full bg-white/[0.06] border border-white/[0.1] px-3 py-1 text-xs text-white/70">{f}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {profile.additionalNotes && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-semibold text-white/40 uppercase tracking-widest">Uwagi</span>
+                        <p className="text-sm text-white/70 font-light">{profile.additionalNotes}</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Active injuries */}
+              {activeInjuries.length > 0 && (
+                <>
+                  <div className="h-px bg-white/[0.08]" />
+                  <div className="space-y-4">
+                    <h3 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase flex items-center gap-2">
+                      <AlertTriangle size={12} strokeWidth={1.5} className="text-orange-400" />
+                      Aktywne kontuzje ({activeInjuries.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {activeInjuries.map((inj) => (
+                        <div key={inj.id} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-white font-medium">{inj.bodyPart}</span>
+                            {inj.severity && (
+                              <span className="text-[10px] uppercase tracking-wider text-white/40">{inj.severity}</span>
+                            )}
+                          </div>
+                          {inj.injuryType && (
+                            <p className="mt-1 text-xs text-white/50">{inj.injuryType}</p>
+                          )}
+                          {inj.description && (
+                            <p className="mt-1 text-xs text-white/40 font-light">{inj.description}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Danger zone */}
+              <div className="h-px bg-white/[0.08]" />
+              <div className="space-y-3">
+                <h3 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase">Onboarding</h3>
+                <p className="text-xs text-white/40 font-light">
+                  Przejdź rozmowę powitalną od nowa aby zaktualizować profil.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (confirm("Rozpocząć rozmowę powitalną od nowa? Historia onboardingu zostanie wyczyszczona.")) {
+                      resetOnboardingMutation.mutate();
+                    }
+                  }}
+                  disabled={resetOnboardingMutation.isPending}
+                  className="w-full"
+                >
+                  <RotateCcw size={14} strokeWidth={1.5} className="mr-2" />
+                  {resetOnboardingMutation.isPending ? "Resetowanie..." : "Odnów rozmowę powitalną"}
+                </Button>
+              </div>
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-0.5">
+      <span className="block text-[10px] font-semibold text-white/40 uppercase tracking-wider">{label}</span>
+      <span className="block text-sm text-white/80 font-light">{value}</span>
     </div>
   );
 }

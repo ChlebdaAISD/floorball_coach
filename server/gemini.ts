@@ -10,17 +10,17 @@ import {
   exercises,
   trainingDays,
   users,
+  athleteProfiles,
+  injuries,
+  weeklySummaries,
 } from "../shared/schema";
 import type { ReadinessLog } from "../shared/schema";
 
-const SYSTEM_PROMPT = `Jesteś osobistym trenerem i fizjoterapeutą sportowym. Twój podopieczny:
-- 35 lat, unihokejista z 25-letnim stażem
-- Praca siedząca 8h/dzień (programista w banku)
-- Historia kontuzji: naderwanie mięśnia czworogłowego (w tym sezonie), naciągnięte hamstringi i łydki, częste "spięcia" mięśni nóg, naderwanie więzadła pobocznego kolana (MCL) 1.5 roku temu
-- Sport wysoce asymetryczny — sprinty, zrywy, nagłe hamowania i rotacje tułowia
-- Regularnie odwiedza fizjoterapeutę co 2 tygodnie
+// ─── Constants ─────────────────────────────────────────────
+const MODEL_NAME = "gemini-3-flash-preview";
 
-ZASADY:
+// Training rules that apply to any athlete
+const TRAINING_RULES = `ZASADY TRENINGOWE:
 - Odpowiadaj ZAWSZE po polsku, krótko i konkretnie
 - Bądź ostrożny — lepiej za mało niż za dużo przy ryzyku kontuzji
 - Przy modyfikacji planu gym stosuj:
@@ -30,8 +30,10 @@ ZASADY:
   * Body Battery < 20 → sugeruj aktywną regenerację zamiast treningu
   * Zbliżający się mecz (2-3 dni) → tapering, zmniejsz objętość
 - Uzasadniaj KAŻDĄ decyzję treningową
-- Gdy proponujesz zmiany w kalendarzu, MUSISZ dodać pole "plan_suggestion" w odpowiedzi JSON
 - Nie dodawaj zbędnych porad — skup się na konkretach`;
+
+// ─── Context Types ─────────────────────────────────────────
+export type ContextType = "chat" | "readiness" | "onboarding" | "weekly_planning" | "post_workout";
 
 function getGenAI() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -39,71 +41,149 @@ function getGenAI() {
   return new GoogleGenerativeAI(apiKey);
 }
 
-async function buildContext(): Promise<string> {
+// ─── System Prompt Builder ─────────────────────────────────
+async function buildSystemPrompt(userId: number): Promise<string> {
+  const [profileRow] = await db
+    .select()
+    .from(athleteProfiles)
+    .where(eq(athleteProfiles.userId, userId))
+    .limit(1);
+
+  const [userRow] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+  const activeInjuries = await db
+    .select()
+    .from(injuries)
+    .where(and(eq(injuries.userId, userId), eq(injuries.isActive, true)));
+
+  let prompt = `Jesteś osobistym trenerem i fizjoterapeutą sportowym.`;
+
+  if (profileRow || userRow) {
+    prompt += `\n\nTWÓJ PODOPIECZNY:`;
+    if (profileRow?.age) prompt += `\n- Wiek: ${profileRow.age} lat`;
+    if (profileRow?.heightCm) prompt += `\n- Wzrost: ${profileRow.heightCm} cm`;
+    if (profileRow?.weightKg) prompt += `\n- Waga: ${profileRow.weightKg} kg`;
+    if (profileRow?.sport) {
+      prompt += `\n- Sport: ${profileRow.sport}`;
+      if (profileRow.sportPosition) prompt += ` (${profileRow.sportPosition})`;
+      if (profileRow.experienceYears) prompt += `, ${profileRow.experienceYears} lat doświadczenia`;
+    }
+    if (profileRow?.gymExperienceLevel) prompt += `\n- Doświadczenie gym: ${profileRow.gymExperienceLevel}`;
+    if (profileRow?.trainingDaysPerWeek) prompt += `\n- Dostępność: ${profileRow.trainingDaysPerWeek} treningi/tyg.`;
+    if (Array.isArray(profileRow?.availableFacilities) && profileRow.availableFacilities.length > 0) {
+      prompt += `\n- Dostępne warunki: ${(profileRow.availableFacilities as string[]).join(", ")}`;
+    }
+    if (Array.isArray(profileRow?.fixedWeeklySchedule) && profileRow.fixedWeeklySchedule.length > 0) {
+      const schedule = (profileRow.fixedWeeklySchedule as Array<Record<string, unknown>>)
+        .map((s) => `${s.day} ${s.time || ""} (${s.type || "trening"})`)
+        .join(", ");
+      prompt += `\n- Stały grafik: ${schedule}`;
+    }
+    if (userRow?.bio) prompt += `\n- Profil: ${userRow.bio}`;
+    if (userRow?.trainingGoal) prompt += `\n- Cel główny: ${userRow.trainingGoal}`;
+    if (userRow?.seasonStart || userRow?.seasonEnd) {
+      prompt += `\n- Sezon: od ${userRow.seasonStart || "?"} do ${userRow.seasonEnd || "?"}`;
+    }
+    if (userRow?.offSeasonStart || userRow?.offSeasonEnd) {
+      prompt += `\n- Off-season: od ${userRow.offSeasonStart || "?"} do ${userRow.offSeasonEnd || "?"}`;
+    }
+    if (profileRow?.additionalNotes) prompt += `\n- Uwagi: ${profileRow.additionalNotes}`;
+  }
+
+  if (activeInjuries.length > 0) {
+    prompt += `\n\nAKTYWNE KONTUZJE:`;
+    for (const inj of activeInjuries) {
+      prompt += `\n- ${inj.bodyPart}`;
+      if (inj.injuryType) prompt += ` (${inj.injuryType})`;
+      if (inj.severity) prompt += `, nasilenie: ${inj.severity}`;
+      if (inj.dateOccurred) prompt += `, od ${inj.dateOccurred}`;
+      if (inj.description) prompt += ` — ${inj.description}`;
+      if (inj.managementNotes) prompt += ` [zarządzanie: ${inj.managementNotes}]`;
+    }
+  }
+
+  prompt += `\n\n${TRAINING_RULES}`;
+
+  return prompt;
+}
+
+// ─── Context Builder ───────────────────────────────────────
+async function buildContext(type: ContextType = "chat"): Promise<string> {
+  // Per-type configuration
+  const config = {
+    chat: { readinessDays: 14, workoutDays: 14, calendarDays: 7, chatLimit: 10 },
+    readiness: { readinessDays: 14, workoutDays: 7, calendarDays: 1, chatLimit: 3 },
+    onboarding: { readinessDays: 0, workoutDays: 0, calendarDays: 0, chatLimit: 15 },
+    weekly_planning: { readinessDays: 14, workoutDays: 14, calendarDays: 30, chatLimit: 5 },
+    post_workout: { readinessDays: 3, workoutDays: 3, calendarDays: 3, chatLimit: 3 },
+  }[type];
+
   const now = new Date();
-  const twoWeeksAgo = new Date(now);
-  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-  const nextWeek = new Date(now);
-  nextWeek.setDate(nextWeek.getDate() + 7);
+  const pastStart = new Date(now);
+  pastStart.setDate(pastStart.getDate() - Math.max(config.readinessDays, config.workoutDays));
+  const futureEnd = new Date(now);
+  futureEnd.setDate(futureEnd.getDate() + config.calendarDays);
 
   const todayStr = now.toISOString().split("T")[0];
-  const twoWeeksAgoStr = twoWeeksAgo.toISOString().split("T")[0];
-  const nextWeekStr = nextWeek.toISOString().split("T")[0];
+  const pastStartStr = pastStart.toISOString().split("T")[0];
+  const futureEndStr = futureEnd.toISOString().split("T")[0];
 
-  // Fetch context data in parallel
-  const [recentReadiness, recentWorkouts, upcomingEvents, recentChat, userRecords] =
+  const [recentReadiness, recentWorkouts, upcomingEvents, recentChat, recentSummaries] =
     await Promise.all([
-      db
-        .select()
-        .from(readinessLogs)
-        .where(gte(readinessLogs.date, twoWeeksAgoStr))
-        .orderBy(desc(readinessLogs.date))
-        .limit(14),
-      db
-        .select()
-        .from(workoutLogs)
-        .where(gte(workoutLogs.date, twoWeeksAgoStr))
-        .orderBy(desc(workoutLogs.date))
-        .limit(14),
-      db
-        .select()
-        .from(calendarEvents)
-        .where(
-          and(
-            gte(calendarEvents.date, todayStr),
-            lte(calendarEvents.date, nextWeekStr),
-          ),
-        )
-        .orderBy(calendarEvents.date),
+      config.readinessDays > 0
+        ? db
+            .select()
+            .from(readinessLogs)
+            .where(gte(readinessLogs.date, pastStartStr))
+            .orderBy(desc(readinessLogs.date))
+            .limit(config.readinessDays)
+        : Promise.resolve([]),
+      config.workoutDays > 0
+        ? db
+            .select()
+            .from(workoutLogs)
+            .where(gte(workoutLogs.date, pastStartStr))
+            .orderBy(desc(workoutLogs.date))
+            .limit(config.workoutDays)
+        : Promise.resolve([]),
+      config.calendarDays > 0
+        ? db
+            .select()
+            .from(calendarEvents)
+            .where(
+              and(
+                gte(calendarEvents.date, todayStr),
+                lte(calendarEvents.date, futureEndStr),
+              ),
+            )
+            .orderBy(calendarEvents.date)
+        : Promise.resolve([]),
       db
         .select()
         .from(chatMessages)
         .orderBy(desc(chatMessages.createdAt))
-        .limit(20),
-      db.select().from(users).limit(1),
+        .limit(config.chatLimit),
+      type === "weekly_planning"
+        ? db
+            .select()
+            .from(weeklySummaries)
+            .orderBy(desc(weeklySummaries.weekStart))
+            .limit(8)
+        : Promise.resolve([]),
     ]);
 
-  const user = userRecords[0];
-  let context = `\n--- DANE ZAWODNIKA (dziś: ${todayStr}) ---\n`;
-
-  if (user) {
-    if (user.bio) context += `Profil: ${user.bio}\n`;
-    if (user.trainingGoal) context += `Cel główny: ${user.trainingGoal}\n`;
-    if (user.interviewAnswers) context += `Wywiad/Tło: ${user.interviewAnswers}\n`;
-    if (user.seasonStart || user.seasonEnd) context += `Sezon: od ${user.seasonStart || '?'} do ${user.seasonEnd || '?'}\n`;
-    if (user.offSeasonStart || user.offSeasonEnd) context += `Off-season: od ${user.offSeasonStart || '?'} do ${user.offSeasonEnd || '?'}\n`;
-  }
+  let context = `\n--- DANE (dziś: ${todayStr}) ---\n`;
 
   if (recentReadiness.length > 0) {
-    context += `\nGOTOWOŚĆ (ostatnie 14 dni):\n`;
-    for (const r of recentReadiness.reverse()) {
+    context += `\nGOTOWOŚĆ (ostatnie ${recentReadiness.length} dni):\n`;
+    for (const r of [...recentReadiness].reverse()) {
       context += `${r.date}: TR=${r.trainingReadiness}, BB=${r.bodyBattery}, Sen=${r.sleepScore}, HRV=${r.hrvStatus}, Ból=${r.painLevel}, Stres=${r.stressLevel}\n`;
     }
   }
 
   if (recentWorkouts.length > 0) {
-    context += `\nTRENINGI (ostatnie 14 dni):\n`;
-    for (const w of recentWorkouts.reverse()) {
+    context += `\nTRENINGI (ostatnie ${recentWorkouts.length} dni):\n`;
+    for (const w of [...recentWorkouts].reverse()) {
       context += `${w.date}: ${w.workoutType}`;
       if (w.durationMinutes) context += `, ${w.durationMinutes}min`;
       if (w.totalTonnage) context += `, tonaż=${w.totalTonnage}kg`;
@@ -115,98 +195,161 @@ async function buildContext(): Promise<string> {
   }
 
   if (upcomingEvents.length > 0) {
-    context += `\nKALENDARZ (najbliższy tydzień):\n`;
+    context += `\nKALENDARZ (najbliższe ${config.calendarDays} dni):\n`;
     for (const e of upcomingEvents) {
       context += `[ID:${e.id}] ${e.date} ${e.time || ""}: ${e.title} (${e.eventType}, status: ${e.status})\n`;
+    }
+  }
+
+  if (recentSummaries.length > 0) {
+    context += `\nPODSUMOWANIA TYGODNIOWE:\n`;
+    for (const s of [...recentSummaries].reverse()) {
+      context += `${s.weekStart}–${s.weekEnd}: gym=${s.gymSessions}, floorball=${s.floorballSessions}, run=${s.runningSessions}, tonaż=${s.totalTonnage}kg, avgReadiness=${s.avgReadiness || "?"}, ACWR=${s.tonnageAcwr || "?"}\n`;
+    }
+  }
+
+  // Chat history — FIX: previously fetched but never included in prompt
+  if (recentChat.length > 0) {
+    const chrono = [...recentChat].reverse();
+    context += `\nHISTORIA ROZMOWY (ostatnie ${chrono.length}):\n`;
+    for (const m of chrono) {
+      const label = m.role === "user" ? "Użytkownik" : "Trener";
+      // Trim overly long messages to keep context tight
+      const content = m.content.length > 500 ? m.content.slice(0, 500) + "…" : m.content;
+      context += `[${label}]: ${content}\n`;
     }
   }
 
   return context;
 }
 
+// ─── Helpers ───────────────────────────────────────────────
+function getSoleUserId(userId?: number): Promise<number> {
+  if (userId) return Promise.resolve(userId);
+  // Fallback for routes that don't pass userId (single-user mode)
+  return db
+    .select({ id: users.id })
+    .from(users)
+    .limit(1)
+    .then((rows) => {
+      if (!rows[0]) throw new Error("No user found");
+      return rows[0].id;
+    });
+}
+
+function stripJsonFences(raw: string): string {
+  return raw.replace(/```json\n?|\n?```/g, "").trim();
+}
+
+// ─── Chat with Coach ───────────────────────────────────────
 export async function chatWithCoach(
   userMessage: string,
-): Promise<{ text: string; planSuggestion?: unknown }> {
+  userId?: number,
+): Promise<{ text: string; planSuggestion?: unknown; injuryUpdate?: unknown }> {
   const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-  const context = await buildContext();
+  const resolvedUserId = await getSoleUserId(userId);
+  const systemPrompt = await buildSystemPrompt(resolvedUserId);
+  const context = await buildContext("chat");
 
-  const prompt = `${SYSTEM_PROMPT}
+  const prompt = `${systemPrompt}
 
 ${context}
 
-WAŻNE: Jeśli decydujesz się wprowadzić zmiany w kalendarzu zawodnika, odpowiedz WYŁĄCZNIE w formacie JSON (bez dodatkowego tekstu):
+WAŻNE - FORMAT ODPOWIEDZI:
+Jeśli wykryjesz wzmiankę o bólu/kontuzji/urazie, LUB chcesz wprowadzić zmiany w kalendarzu,
+odpowiedz WYŁĄCZNIE w formacie JSON (bez dodatkowego tekstu):
 {
-  "text": "Twoja odpowiedź tekstowa po polsku tłumacząca co i dlaczego zmieniłeś",
+  "text": "Twoja odpowiedź tekstowa po polsku",
   "plan_suggestion": {
     "changes": [
       {"event_id": 42, "action": "cancel", "reason": "..."},
       {"date": "2026-04-15", "time": "18:00", "action": "add", "event_type": "rest", "title": "...", "reason": "..."},
       {"event_id": 43, "action": "modify", "title": "nowy tytuł", "time": "20:00", "date": "2026-04-12", "event_type": "gym", "reason": "..."}
     ]
+  },
+  "injury_update": {
+    "body_part": "kolano_lewe",
+    "injury_type": "ból",
+    "severity": "lekka",
+    "description": "ból po treningu",
+    "is_active": true
   }
 }
-UWAGA: event_id MUSI być liczbą z pola [ID:...] z kalendarza powyżej. NIE wymyślaj własnych identyfikatorów.
 
-Jeśli NIE proponujesz zmian w kalendarzu, odpowiedz NORMALNYM TEKSTEM (bez JSON).
+Pole "plan_suggestion" — pomiń jeśli nie proponujesz zmian.
+Pole "injury_update" — pomiń jeśli użytkownik nie wspomina o bólu/kontuzji.
+UWAGA: event_id MUSI być liczbą z pola [ID:...] z kalendarza powyżej. NIE wymyślaj ID.
+
+Jeśli NIE proponujesz zmian ANI nie wykrywasz kontuzji, odpowiedz NORMALNYM TEKSTEM (bez JSON).
 
 Wiadomość zawodnika: ${userMessage}`;
 
   const result = await model.generateContent(prompt);
   const response = result.response.text();
 
-  // Try to extract JSON with plan_suggestion from the response
-  // The model may return: pure JSON, ```json ... ```, or plain text + JSON block
-  function tryExtractPlan(raw: string): { text: string; planSuggestion?: unknown } | null {
+  function tryExtract(raw: string): { text: string; planSuggestion?: unknown; injuryUpdate?: unknown } | null {
     // 1. Try parsing the whole thing as JSON (after stripping fences)
-    const stripped = raw.replace(/```json\n?|\n?```/g, "").trim();
+    const stripped = stripJsonFences(raw);
     try {
       const parsed = JSON.parse(stripped);
       if (parsed.text) {
-        return { text: parsed.text, planSuggestion: parsed.plan_suggestion };
+        return {
+          text: parsed.text,
+          planSuggestion: parsed.plan_suggestion,
+          injuryUpdate: parsed.injury_update,
+        };
       }
     } catch { /* not pure JSON */ }
 
-    // 2. Extract JSON from a ```json ... ``` code block
+    // 2. Extract from ```json ... ``` code block
     const codeBlockMatch = raw.match(/```json\s*\n([\s\S]*?)\n\s*```/);
     if (codeBlockMatch) {
       try {
         const parsed = JSON.parse(codeBlockMatch[1].trim());
-        // Use the text from JSON, or the text before the code block
         const textBefore = raw.slice(0, raw.indexOf("```json")).trim();
         const displayText = parsed.text || textBefore || response;
-        return { text: displayText, planSuggestion: parsed.plan_suggestion };
-      } catch { /* malformed JSON in code block */ }
+        return {
+          text: displayText,
+          planSuggestion: parsed.plan_suggestion,
+          injuryUpdate: parsed.injury_update,
+        };
+      } catch { /* malformed */ }
     }
 
-    // 3. Try to find a raw JSON object with plan_suggestion
-    const jsonMatch = raw.match(/\{[\s\S]*"plan_suggestion"[\s\S]*\}/);
+    // 3. Try to find a raw JSON object with plan_suggestion or injury_update
+    const jsonMatch = raw.match(/\{[\s\S]*"(plan_suggestion|injury_update)"[\s\S]*\}/);
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0]);
         const textBefore = raw.slice(0, raw.indexOf(jsonMatch[0])).trim();
-        return { text: parsed.text || textBefore || response, planSuggestion: parsed.plan_suggestion };
+        return {
+          text: parsed.text || textBefore || response,
+          planSuggestion: parsed.plan_suggestion,
+          injuryUpdate: parsed.injury_update,
+        };
       } catch { /* malformed */ }
     }
 
     return null;
   }
 
-  const extracted = tryExtractPlan(response);
+  const extracted = tryExtract(response);
   if (extracted) return extracted;
 
   return { text: response };
 }
 
+// ─── Analyze Readiness ─────────────────────────────────────
 export async function analyzeReadiness(
   readiness: ReadinessLog,
   calendarEventId: number,
+  userId?: number,
 ): Promise<{ summary: string; modifications: unknown[] }> {
   const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
-  // Get the gym plan for this event
   const [event] = await db
     .select()
     .from(calendarEvents)
@@ -237,9 +380,11 @@ export async function analyzeReadiness(
     .where(eq(plannedExercises.trainingDayId, event.trainingDayId))
     .orderBy(plannedExercises.orderIndex);
 
-  const context = await buildContext();
+  const resolvedUserId = await getSoleUserId(userId);
+  const systemPrompt = await buildSystemPrompt(resolvedUserId);
+  const context = await buildContext("readiness");
 
-  const prompt = `${SYSTEM_PROMPT}
+  const prompt = `${systemPrompt}
 
 ${context}
 
@@ -274,13 +419,217 @@ Odpowiedz WYŁĄCZNIE w formacie JSON:
   const response = result.response.text();
 
   try {
-    // Strip markdown code fences if present
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = stripJsonFences(response);
     return JSON.parse(cleaned);
   } catch {
+    return { summary: response, modifications: [] };
+  }
+}
+
+// ─── Onboarding Chat ───────────────────────────────────────
+// List of onboarding topics the AI must cover
+export const ONBOARDING_TOPICS = [
+  "sport",          // Sport, pozycja, doświadczenie
+  "goals",          // Cele treningowe/sezonowe
+  "body",           // Wzrost, waga, wiek
+  "injuries",       // Historia kontuzji
+  "season",         // Sezon/off-season
+  "availability",   // Dostępność + sprzęt
+  "schedule",       // Stały grafik
+] as const;
+
+export type OnboardingTopic = typeof ONBOARDING_TOPICS[number];
+
+const ONBOARDING_SYSTEM_PROMPT = `Jesteś osobistym trenerem sportowym, prowadzisz ONBOARDING nowego zawodnika.
+Twoje zadanie: w naturalnej rozmowie zebrać informacje potrzebne do zbudowania planu treningowego.
+
+ZASADY:
+- Mów po polsku, przyjaźnie ale profesjonalnie
+- Jedno pytanie na raz, nie przeciążaj
+- Dostosowuj kolejne pytania do tego co użytkownik już powiedział
+- Gdy użytkownik wspomni o kontuzji — dopytaj o szczegóły (kiedy, jak się to dzieje, jak zarządza)
+- NIE pytaj o wszystko naraz — jedna wiadomość = jeden temat
+- Jeśli pierwsza wiadomość — przedstaw się krótko i zadaj pierwsze pytanie o sport
+
+TEMATY DO POKRYCIA (w takiej kolejności, ale adaptacyjnie):
+1. sport — jaki sport, pozycja, jak długo trenuje, doświadczenie gym
+2. goals — jakie cele na sezon/rok, co chce poprawić
+3. body — wzrost, waga, wiek
+4. injuries — historia kontuzji (ostatnie, przewlekłe)
+5. season — kiedy sezon startuje, kiedy off-season
+6. availability — ile dni/tydzień może trenować, jakie ma warunki (siłownia, basen, dom)
+7. schedule — stały grafik (treningi drużynowe, regularne zajęcia)
+
+Gdy pokryjesz WSZYSTKIE tematy, zakończ rozmowę podsumowaniem i ustaw "is_complete": true.`;
+
+export async function chatOnboarding(
+  userMessage: string | null, // null = start onboarding
+  userId: number,
+  coveredTopics: Record<string, boolean> = {},
+): Promise<{
+  text: string;
+  extractedData?: {
+    profile?: Partial<{
+      sport: string;
+      sportPosition: string;
+      experienceYears: number;
+      gymExperienceLevel: string;
+      heightCm: number;
+      weightKg: number;
+      age: number;
+      trainingDaysPerWeek: number;
+      availableFacilities: string[];
+      fixedWeeklySchedule: Array<{ day: string; time?: string; type?: string }>;
+      additionalNotes: string;
+    }>;
+    user?: Partial<{
+      bio: string;
+      trainingGoal: string;
+      seasonStart: string;
+      seasonEnd: string;
+      offSeasonStart: string;
+      offSeasonEnd: string;
+    }>;
+    injuries?: Array<{
+      bodyPart: string;
+      injuryType?: string;
+      severity?: string;
+      description?: string;
+      dateOccurred?: string;
+      isActive?: boolean;
+      managementNotes?: string;
+    }>;
+  };
+  topicsCovered?: string[];
+  isComplete?: boolean;
+}> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+
+  // For onboarding, only chat history matters
+  const recentChat = await db
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.contextType, "onboarding"))
+    .orderBy(desc(chatMessages.createdAt))
+    .limit(15);
+
+  let chatHistory = "";
+  if (recentChat.length > 0) {
+    chatHistory = "\nHISTORIA ROZMOWY:\n";
+    for (const m of [...recentChat].reverse()) {
+      const label = m.role === "user" ? "Użytkownik" : "Trener";
+      chatHistory += `[${label}]: ${m.content}\n`;
+    }
+  }
+
+  const coveredList = Object.entries(coveredTopics)
+    .filter(([, v]) => v)
+    .map(([k]) => k)
+    .join(", ") || "(żadne)";
+  const remainingList = ONBOARDING_TOPICS
+    .filter((t) => !coveredTopics[t])
+    .join(", ") || "(wszystkie pokryte)";
+
+  const prompt = `${ONBOARDING_SYSTEM_PROMPT}
+
+TEMATY POKRYTE: ${coveredList}
+TEMATY POZOSTAŁE: ${remainingList}
+${chatHistory}
+
+${userMessage === null
+  ? "To jest POCZĄTEK rozmowy — przedstaw się i zadaj pierwsze pytanie."
+  : `Ostatnia wiadomość użytkownika: ${userMessage}`}
+
+Odpowiedz WYŁĄCZNIE w formacie JSON:
+{
+  "text": "Twoja odpowiedź konwersacyjna po polsku",
+  "extracted_data": {
+    "profile": { /* pola athleteProfiles: sport, sportPosition, experienceYears, gymExperienceLevel, heightCm, weightKg, age, trainingDaysPerWeek, availableFacilities: string[], fixedWeeklySchedule: [{day, time, type}], additionalNotes */ },
+    "user": { /* pola users: bio, trainingGoal, seasonStart (YYYY-MM-DD), seasonEnd, offSeasonStart, offSeasonEnd */ },
+    "injuries": [ { "bodyPart": "...", "injuryType": "...", "severity": "...", "description": "...", "dateOccurred": "YYYY-MM-DD", "isActive": true, "managementNotes": "..." } ]
+  },
+  "topics_covered": ["sport", "goals", ...],
+  "is_complete": false
+}
+
+Reguły:
+- Wszystkie pola w "extracted_data" są OPCJONALNE — podawaj tylko to, co wyciągnąłeś z tej wiadomości
+- "topics_covered" — lista tematów które ZOSTAŁY POKRYTE w tej wiadomości (z listy: ${ONBOARDING_TOPICS.join(", ")})
+- "is_complete": true TYLKO gdy pokryto WSZYSTKIE tematy i użytkownik potwierdził podsumowanie
+- Jeśli brak danych do wyciągnięcia, daj "extracted_data": {}`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+
+  try {
+    const cleaned = stripJsonFences(response);
+    const parsed = JSON.parse(cleaned);
     return {
-      summary: response,
-      modifications: [],
+      text: parsed.text || response,
+      extractedData: parsed.extracted_data,
+      topicsCovered: parsed.topics_covered || [],
+      isComplete: parsed.is_complete === true,
     };
+  } catch {
+    return { text: response };
+  }
+}
+
+// ─── Post-workout Analysis ─────────────────────────────────
+export async function analyzeWorkout(
+  workoutLogId: number,
+  userId?: number,
+): Promise<{ feedback: string; injuryUpdate?: unknown }> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+
+  const [workout] = await db
+    .select()
+    .from(workoutLogs)
+    .where(eq(workoutLogs.id, workoutLogId));
+
+  if (!workout) {
+    return { feedback: "Nie znaleziono treningu." };
+  }
+
+  const resolvedUserId = await getSoleUserId(userId);
+  const systemPrompt = await buildSystemPrompt(resolvedUserId);
+  const context = await buildContext("post_workout");
+
+  const prompt = `${systemPrompt}
+
+${context}
+
+WŁAŚNIE ZAKOŃCZONY TRENING:
+Data: ${workout.date}
+Typ: ${workout.workoutType}
+${workout.durationMinutes ? `Czas: ${workout.durationMinutes} min` : ""}
+${workout.totalTonnage ? `Tonaż: ${workout.totalTonnage} kg` : ""}
+${workout.distanceKm ? `Dystans: ${workout.distanceKm} km` : ""}
+${workout.rpe ? `RPE: ${workout.rpe}/10` : ""}
+${workout.avgHr ? `Średni puls: ${workout.avgHr}` : ""}
+${workout.maxHr ? `Max puls: ${workout.maxHr}` : ""}
+${workout.notes ? `Notatki: ${workout.notes}` : ""}
+
+Zadanie: krótki feedback (max 3 zdania) + ewentualna kontuzja jeśli wspomniana w notatkach.
+Format JSON:
+{
+  "feedback": "Krótki feedback po polsku + sugestia na najbliższe 24-48h",
+  "injury_update": { "body_part": "...", "injury_type": "...", "severity": "...", "description": "...", "is_active": true } // pomiń jeśli brak
+}`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+
+  try {
+    const cleaned = stripJsonFences(response);
+    const parsed = JSON.parse(cleaned);
+    return {
+      feedback: parsed.feedback || response,
+      injuryUpdate: parsed.injury_update,
+    };
+  } catch {
+    return { feedback: response };
   }
 }

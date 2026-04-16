@@ -8,15 +8,19 @@ import {
   date,
   real,
   jsonb,
+  varchar,
+  json,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // ─── 0. Session (connect-pg-simple) ─────────────────────────
+// Managed by connect-pg-simple library — must match its expected schema exactly
+// to avoid destructive migrations (varchar/json/timestamp(6)).
 export const session = pgTable("session", {
-  sid: text("sid").primaryKey(),
-  sess: jsonb("sess").notNull(),
-  expire: timestamp("expire").notNull(),
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
 });
 
 // ─── 1. Users ───────────────────────────────────────────────
@@ -31,6 +35,8 @@ export const users = pgTable("users", {
   offSeasonStart: date("off_season_start"),
   offSeasonEnd: date("off_season_end"),
   interviewAnswers: text("interview_answers"), // Store as text string for easier AI parsing
+  onboardingComplete: boolean("onboarding_complete").notNull().default(false),
+  onboardingProgress: jsonb("onboarding_progress"), // {"sport":true,"goals":true,"body":false,...}
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
@@ -179,6 +185,7 @@ export const workoutLogs = pgTable("workout_logs", {
   trainingEffectAnaerobic: real("training_effect_anaerobic"), // 0-5
   // Meta
   notes: text("notes"),
+  aiFeedback: text("ai_feedback"), // Post-workout AI analysis
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -216,6 +223,8 @@ export const chatMessages = pgTable("chat_messages", {
   role: text("role").notNull(), // user | assistant
   content: text("content").notNull(),
   planSuggestion: jsonb("plan_suggestion"),
+  contextType: text("context_type").notNull().default("chat"), // chat | onboarding | readiness | weekly_planning
+  extractedData: jsonb("extracted_data"), // Structured data AI extracted from this message
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -244,6 +253,59 @@ export const insertWeeklySummarySchema = createInsertSchema(
   weeklySummaries,
 ).omit({ id: true, createdAt: true });
 
+// ─── 12. Athlete Profiles ──────────────────────────────────
+export const athleteProfiles = pgTable("athlete_profiles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  sport: text("sport"), // "unihokej", "pływanie", etc.
+  sportPosition: text("sport_position"), // "napastnik", "obrońca"
+  experienceYears: integer("experience_years"),
+  gymExperienceLevel: text("gym_experience_level"), // beginner | intermediate | advanced
+  heightCm: integer("height_cm"),
+  weightKg: real("weight_kg"),
+  age: integer("age"),
+  trainingDaysPerWeek: integer("training_days_per_week"),
+  availableFacilities: jsonb("available_facilities"), // ["gym", "pool", "home", "outdoor"]
+  fixedWeeklySchedule: jsonb("fixed_weekly_schedule"), // [{"day":"tuesday","time":"20:00","type":"team_practice"}]
+  additionalNotes: text("additional_notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertAthleteProfileSchema = createInsertSchema(athleteProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// ─── 13. Injuries ──────────────────────────────────────────
+export const injuries = pgTable("injuries", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  bodyPart: text("body_part").notNull(), // "kolano_lewe", "hamstring_prawy"
+  injuryType: text("injury_type"), // "naderwanie", "naciągnięcie", "przewlekły_ból"
+  severity: text("severity"), // "lekka" | "średnia" | "poważna"
+  description: text("description"),
+  dateOccurred: date("date_occurred"),
+  dateResolved: date("date_resolved"),
+  isActive: boolean("is_active").notNull().default(true),
+  managementNotes: text("management_notes"),
+  source: text("source").notNull().default("manual"), // onboarding | chat | manual
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertInjurySchema = createInsertSchema(injuries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // ─── Type Exports ──────────────────────────────────────────
 export type User = typeof users.$inferSelect;
 export type Exercise = typeof exercises.$inferSelect;
@@ -256,6 +318,8 @@ export type WorkoutLog = typeof workoutLogs.$inferSelect;
 export type ExerciseLog = typeof exerciseLogs.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type WeeklySummary = typeof weeklySummaries.$inferSelect;
+export type AthleteProfile = typeof athleteProfiles.$inferSelect;
+export type Injury = typeof injuries.$inferSelect;
 
 export type InsertExercise = z.infer<typeof insertExerciseSchema>;
 export type InsertTrainingPlan = z.infer<typeof insertTrainingPlanSchema>;
@@ -267,3 +331,5 @@ export type InsertWorkoutLog = z.infer<typeof insertWorkoutLogSchema>;
 export type InsertExerciseLog = z.infer<typeof insertExerciseLogSchema>;
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type InsertWeeklySummary = z.infer<typeof insertWeeklySummarySchema>;
+export type InsertAthleteProfile = z.infer<typeof insertAthleteProfileSchema>;
+export type InsertInjury = z.infer<typeof insertInjurySchema>;

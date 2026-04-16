@@ -4,6 +4,10 @@ import { apiRequest } from "@/lib/utils";
 interface User {
   id: number;
   username: string;
+  onboardingComplete?: boolean;
+  onboardingProgress?: Record<string, boolean> | null;
+  bio?: string | null;
+  trainingGoal?: string | null;
 }
 
 export function useAuth() {
@@ -45,6 +49,7 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+    needsOnboarding: !!user && user.onboardingComplete === false,
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
     loginError: loginMutation.error,
