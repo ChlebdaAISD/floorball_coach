@@ -4,6 +4,7 @@ import {
   Line,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -12,12 +13,15 @@ import {
   Legend,
 } from "recharts";
 import { apiRequest } from "@/lib/utils";
-import { format, startOfWeek, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { pl } from "date-fns/locale";
 import { useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings } from "lucide-react";
+import { TopNav } from "@/components/TopNav";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export default function DashboardPage() {
+  const { openSettings } = useSettings();
   const { data: readiness = [], isLoading: loadingR } = useQuery<any[]>({
     queryKey: ["dashboard-readiness"],
     queryFn: () => apiRequest("/api/dashboard/readiness?days=30"),
@@ -25,7 +29,7 @@ export default function DashboardPage() {
 
   const { data: workouts = [], isLoading: loadingW } = useQuery<any[]>({
     queryKey: ["dashboard-tonnage"],
-    queryFn: () => apiRequest("/api/dashboard/tonnage?weeks=8"),
+    queryFn: () => apiRequest("/api/dashboard/tonnage?weeks=5"),
   });
 
   const readinessData = useMemo(
@@ -34,132 +38,111 @@ export default function DashboardPage() {
         date: format(parseISO(r.date), "d/MM"),
         "Training Readiness": r.trainingReadiness,
         "Body Battery": r.bodyBattery,
-        "Ból": r.painLevel ? r.painLevel * 10 : null, // Scale to 0-100 for same axis
+        "Ból": r.painLevel ? r.painLevel * 10 : null,
       })),
     [readiness],
   );
 
-  const weeklyData = useMemo(() => {
-    const weeks = new Map<
-      string,
-      { gym: number; floorball: number; running: number; tonnage: number }
-    >();
-
+  const activityTotals = useMemo(() => {
+    let gym = 0, floorball = 0, running = 0;
     for (const w of workouts) {
-      const weekKey = format(
-        startOfWeek(parseISO(w.date), { weekStartsOn: 1 }),
-        "d/MM",
-      );
-      if (!weeks.has(weekKey)) {
-        weeks.set(weekKey, { gym: 0, floorball: 0, running: 0, tonnage: 0 });
-      }
-      const week = weeks.get(weekKey)!;
-      if (w.workoutType === "gym") {
-        week.gym++;
-        week.tonnage += w.totalTonnage || 0;
-      } else if (w.workoutType === "floorball") {
-        week.floorball++;
-      } else if (w.workoutType === "running") {
-        week.running++;
-      }
+      if (w.workoutType === "gym") gym++;
+      else if (w.workoutType === "floorball") floorball++;
+      else if (w.workoutType === "running") running++;
     }
-
-    return Array.from(weeks.entries()).map(([week, data]) => ({
-      week,
-      ...data,
-    }));
+    return [
+      { name: "Siłownia", count: gym, fill: "#ffffff" },
+      { name: "Unihokej", count: floorball, fill: "rgba(255,255,255,0.5)" },
+      { name: "Bieg", count: running, fill: "rgba(255,255,255,0.7)" },
+    ];
   }, [workouts]);
 
   const isLoading = loadingR || loadingW;
 
   if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+      <div className="flex h-[100dvh] items-center justify-center bg-black">
+        <Loader2 size={20} strokeWidth={1} className="animate-spin text-white/40" />
       </div>
     );
   }
 
-  return (
-    <div className="space-y-6 p-4">
-      <h1 className="text-xl font-bold">Statystyki</h1>
+  const tooltipStyle = {
+    contentStyle: {
+      backgroundColor: "#111111",
+      border: "1px solid rgba(255,255,255,0.12)",
+      borderRadius: 12,
+      color: "#fff",
+    },
+    labelStyle: { color: "rgba(255,255,255,0.4)", marginBottom: 4 },
+    itemStyle: { fontSize: 12, padding: "2px 0" },
+  };
 
+  return (
+    <div className="bg-black text-white">
+      <TopNav
+        label="Przegląd"
+        title="Statystyki"
+        right={
+          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        }
+      />
+
+      <div className="px-4 space-y-6 pb-8">
       {/* Readiness Trend */}
-      <div className="rounded-xl bg-slate-900 p-4">
-        <h3 className="mb-3 text-sm font-semibold text-slate-300">
+      <div className="rounded-2xl bg-[#111111] border border-white/[0.12] p-5">
+        <h3 className="mb-6 text-[11px] font-semibold tracking-widest text-white/40 uppercase">
           Gotowość (30 dni)
         </h3>
         {readinessData.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-600">
+          <p className="py-8 text-center text-sm text-white/20 font-light">
             Brak danych — uzupełnij gotowość przed treningiem
           </p>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={240}>
             <LineChart data={readinessData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#64748b" }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "#64748b" }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
-                labelStyle={{ color: "#94a3b8" }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="Training Readiness" stroke="#3b82f6" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Body Battery" stroke="#22c55e" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Ból" stroke="#ef4444" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: "rgba(255,255,255,0.3)" }} tickMargin={10} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.3)" }} tickMargin={10} axisLine={false} tickLine={false} />
+              <Tooltip {...tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 20 }} iconType="circle" />
+              <Line type="monotone" dataKey="Training Readiness" stroke="#c5e063" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Body Battery" stroke="#60a5fa" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Ból" stroke="#ef4444" strokeWidth={1.5} dot={false} strokeDasharray="4 4" />
             </LineChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Weekly Load */}
-      <div className="rounded-xl bg-slate-900 p-4">
-        <h3 className="mb-3 text-sm font-semibold text-slate-300">
-          Treningi tygodniowo
+      {/* Activity totals */}
+      <div className="rounded-2xl bg-[#111111] border border-white/[0.12] p-5">
+        <h3 className="mb-6 text-[11px] font-semibold tracking-widest text-white/40 uppercase">
+          Aktywności (30 dni)
         </h3>
-        {weeklyData.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-600">
+        {workouts.length === 0 ? (
+          <p className="py-8 text-center text-sm text-white/20 font-light">
             Brak danych — zapisz treningi żeby zobaczyć statystyki
           </p>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={weeklyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#64748b" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#64748b" }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
-                labelStyle={{ color: "#94a3b8" }}
-              />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="gym" name="Siłownia" fill="#3b82f6" stackId="a" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="floorball" name="Unihokej" fill="#22c55e" stackId="a" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="running" name="Bieg" fill="#f97316" stackId="a" radius={[4, 4, 0, 0]} />
+            <BarChart data={activityTotals} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "rgba(255,255,255,0.5)" }} tickMargin={10} axisLine={false} tickLine={false} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "rgba(255,255,255,0.3)" }} tickMargin={10} axisLine={false} tickLine={false} />
+              <Tooltip {...tooltipStyle} formatter={(value: number) => [value, "treningi"]} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+              <Bar dataKey="count" name="Treningi" radius={[6, 6, 0, 0]}>
+                {activityTotals.map((entry, index) => (
+                  <Cell key={index} fill={entry.fill} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Tonnage */}
-      {weeklyData.some((w) => w.tonnage > 0) && (
-        <div className="rounded-xl bg-slate-900 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-300">
-            Tonaż siłowy (kg)
-          </h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={weeklyData.filter((w) => w.tonnage > 0)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#64748b" }} />
-              <YAxis tick={{ fontSize: 10, fill: "#64748b" }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: 8 }}
-                formatter={(value: number) => [`${value.toFixed(0)} kg`, "Tonaż"]}
-              />
-              <Bar dataKey="tonnage" name="Tonaż" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
