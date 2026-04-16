@@ -83,6 +83,20 @@ export default function TodayPage() {
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  const analyzeMutation = useMutation({
+    mutationFn: (workoutId: number) =>
+      apiRequest<{ analysis: { feedback: string } }>(`/api/workouts/${workoutId}/analyze`, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      setAiFeedback(data.analysis?.feedback || null);
+      setIsAnalyzing(false);
+    },
+    onError: () => {
+      setIsAnalyzing(false);
+    },
+  });
+
   if (isLoadingEvents || isLoadingReadiness) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -98,20 +112,6 @@ export default function TodayPage() {
     setAiFeedback(null);
     setIsAnalyzing(false);
   };
-
-  const analyzeMutation = useMutation({
-    mutationFn: (workoutId: number) =>
-      apiRequest<{ analysis: { feedback: string } }>(`/api/workouts/${workoutId}/analyze`, {
-        method: "POST",
-      }),
-    onSuccess: (data) => {
-      setAiFeedback(data.analysis?.feedback || null);
-      setIsAnalyzing(false);
-    },
-    onError: () => {
-      setIsAnalyzing(false);
-    },
-  });
 
   const onWorkoutSaved = (workoutId: number) => {
     queryClient.invalidateQueries({ queryKey: ["today-events"] });
