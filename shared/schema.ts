@@ -264,6 +264,7 @@ export const chatMessages = pgTable(
     role: text("role").notNull(), // user | assistant
     content: text("content").notNull(),
     planSuggestion: jsonb("plan_suggestion"),
+    suggestionStatus: text("suggestion_status"), // null | accepted | rejected (only when planSuggestion is set)
     contextType: text("context_type").notNull().default("chat"), // chat | onboarding | readiness | weekly_planning
     extractedData: jsonb("extracted_data"), // Structured data AI extracted from this message
     createdAt: timestamp("created_at").notNull().defaultNow(),

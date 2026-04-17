@@ -31,6 +31,7 @@ import type { CalendarEvent } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { EventDetailPanel } from "@/components/EventDetailPanel";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
 
@@ -301,6 +302,7 @@ function DayDetail({
   onDateChange: (newDate: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
 
   // Own query so date navigation always fetches fresh data regardless of calendar range
   const { data: events = [] } = useQuery<CalendarEvent[]>({
@@ -319,12 +321,18 @@ function DayDetail({
   const navigateDate = (dir: 1 | -1) => {
     const current = new Date(date + "T12:00:00");
     const next = dir === 1 ? addDays(current, 1) : subDays(current, 1);
+    setExpandedEventId(null);
     onDateChange(format(next, "yyyy-MM-dd"));
   };
 
+  const invalidateAfterChange = () => {
+    queryClient.invalidateQueries({ queryKey: ["calendar-day", date] });
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+  };
+
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center">
-      <div className="w-full max-w-md rounded-t-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pb-safe">
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/80 backdrop-blur-sm sm:items-center overflow-y-auto">
+      <div className="w-full max-w-md rounded-b-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pt-safe sm:pt-6">
         {/* Header with date navigation */}
         <div className="mb-6 flex items-center gap-2">
           <button
@@ -351,31 +359,50 @@ function DayDetail({
           <p className="text-sm font-light text-white/30 mb-6 px-1">Brak wydarzeń tego dnia.</p>
         ) : (
           <div className="space-y-3 mb-6">
-            {events.map((ev) => (
-              <div key={ev.id} className="flex items-center justify-between rounded-2xl bg-black/40 border border-white/[0.08] p-4">
-                <div className="flex items-center gap-4">
-                  <div className={cn("h-2 w-2 rounded-full", EVENT_COLORS[ev.eventType])} />
-                  <div>
-                    <p className="text-sm font-medium text-white">{ev.title}</p>
-                    <p className="text-[10px] text-white/30 font-light mt-0.5 uppercase tracking-widest">
-                      {ev.time && `${ev.time} · `}
-                      {EVENT_LABELS[ev.eventType] || ev.eventType}
-                      {ev.status !== "planned" && ` · ${ev.status}`}
-                    </p>
+            {events.map((ev) => {
+              const isExpanded = expandedEventId === ev.id;
+              return (
+                <div key={ev.id}>
+                  <div className="flex items-center justify-between rounded-2xl bg-black/40 border border-white/[0.08] p-4">
+                    <button
+                      onClick={() => setExpandedEventId(isExpanded ? null : ev.id)}
+                      className="flex flex-1 items-center gap-4 text-left"
+                    >
+                      <div className={cn("h-2 w-2 rounded-full", EVENT_COLORS[ev.eventType])} />
+                      <div>
+                        <p className="text-sm font-medium text-white">{ev.title}</p>
+                        <p className="text-[10px] text-white/30 font-light mt-0.5 uppercase tracking-widest">
+                          {ev.time && `${ev.time} · `}
+                          {EVENT_LABELS[ev.eventType] || ev.eventType}
+                          {ev.status !== "planned" && ` · ${ev.status}`}
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("Czy na pewno chcesz usunąć to wydarzenie?")) {
+                          deleteMutation.mutate(ev.id);
+                        }
+                      }}
+                      className="rounded-full p-2 text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                    >
+                      <X size={16} strokeWidth={1} />
+                    </button>
                   </div>
+                  {isExpanded && (
+                    <div className="mt-2">
+                      <EventDetailPanel
+                        event={ev}
+                        onClose={() => setExpandedEventId(null)}
+                        onEventUpdated={invalidateAfterChange}
+                        mode="view-only"
+                      />
+                    </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => {
-                    if (confirm("Czy na pewno chcesz usunąć to wydarzenie?")) {
-                      deleteMutation.mutate(ev.id);
-                    }
-                  }}
-                  className="rounded-full p-2 text-white/20 hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                >
-                  <X size={16} strokeWidth={1} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -430,12 +457,12 @@ function EventFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/80 backdrop-blur-sm sm:items-center overflow-y-auto">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md rounded-t-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pb-safe"
+        className="w-full max-w-md rounded-b-[32px] sm:rounded-[32px] bg-[#111111] border border-white/[0.12] p-6 pt-safe sm:pt-6"
       >
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-6 flex items-center justify-between">
           <button type="button" onClick={onBack} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
             <ChevronLeft size={18} strokeWidth={1} />
           </button>
@@ -445,8 +472,8 @@ function EventFormModal({
           </button>
         </div>
 
-        <div className="space-y-5">
-          <div className="space-y-2">
+        <div className="space-y-4">
+          <div className="space-y-1.5">
             <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Typ</label>
             <Select value={eventType} onChange={(e) => setEventType(e.target.value)}>
               {Object.entries(EVENT_LABELS).map(([key, label]) => (
@@ -454,7 +481,7 @@ function EventFormModal({
               ))}
             </Select>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Nazwa</label>
             <Input
               type="text"
@@ -463,8 +490,8 @@ function EventFormModal({
               placeholder={EVENT_LABELS[eventType]}
             />
           </div>
-          <div className="flex gap-4">
-            <div className="flex-1 space-y-2">
+          <div className="flex gap-3">
+            <div className="flex-1 min-w-0 space-y-1.5">
               <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Data</label>
               <Input
                 type="date"
@@ -473,7 +500,7 @@ function EventFormModal({
                 className="[color-scheme:dark]"
               />
             </div>
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 min-w-0 space-y-1.5">
               <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Godzina</label>
               <Input
                 type="time"
@@ -485,10 +512,11 @@ function EventFormModal({
           </div>
         </div>
 
-        <div className="mt-10 mb-2">
+        <div className="mt-8 mb-2">
           <Button
             type="submit"
             variant="primary"
+            size="md"
             disabled={createMutation.isPending}
             className="w-full"
           >

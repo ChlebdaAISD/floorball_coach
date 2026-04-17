@@ -9,30 +9,21 @@ import {
   Loader2,
   Activity,
   Settings,
-  X,
   ChevronDown,
 } from "lucide-react";
 import { cn, apiRequest, EVENT_LABELS } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { CalendarEvent } from "@shared/schema";
-import { Button, buttonVariants } from "@/components/ui/Button";
+import { buttonVariants } from "@/components/ui/Button";
 import { InsightList } from "@/components/InsightCard";
+import { EventDetailPanel, HR_ZONES, type SubflowStep } from "@/components/EventDetailPanel";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
 
 // ─── Button styles (sourced from Button component variants) ──
 const btnPrimary = cn(buttonVariants({ variant: "primary", size: "md" }), "w-full");
 const btnSecondary = cn(buttonVariants({ variant: "secondary", size: "md" }), "w-full");
-
-// ─── HR Zones ────────────────────────────────────────────────
-const HR_ZONES = [
-  { id: 1, label: "Z1", desc: "50–60% · Regeneracja",     color: "#60a5fa" },
-  { id: 2, label: "Z2", desc: "60–70% · Aerobowa baza",   color: "#34d399" },
-  { id: 3, label: "Z3", desc: "70–80% · Aerobowa",        color: "#fbbf24" },
-  { id: 4, label: "Z4", desc: "80–90% · Próg anaerobowy", color: "#f97316" },
-  { id: 5, label: "Z5", desc: "90–100% · Maksymalny",     color: "#f87171" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────
 function todayStr() {
@@ -60,8 +51,6 @@ export default function TodayPage() {
   const [step, setStep] = useState<Step>("events");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [expandedEvent, setExpandedEvent] = useState<CalendarEvent | null>(null);
-  const [eventNotes, setEventNotes] = useState<Record<number, string>>({});
-  const [fizjoPromptId, setFizjoPromptId] = useState<number | null>(null);
   const { openSettings } = useSettings();
 
   useSetTopNav(
@@ -82,12 +71,6 @@ export default function TodayPage() {
         : null,
     [step, openSettings],
   );
-
-  const updateEventMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
-      apiRequest(`/api/calendar/events/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["today-events"] }),
-  });
 
   const { data: todayEvents = [], isLoading: isLoadingEvents } = useQuery<CalendarEvent[]>({
     queryKey: ["today-events"],
@@ -186,11 +169,11 @@ export default function TodayPage() {
     return <QuickCompleteForm event={selectedEvent} onComplete={onWorkoutSaved} onBack={goBack} />;
   }
 
-  const handleSkip = (event: CalendarEvent) =>
-    updateEventMutation.mutate({ id: event.id, data: { status: "skipped", notes: eventNotes[event.id] ?? event.notes ?? null } });
-
-  const handleSimpleComplete = (event: CalendarEvent) =>
-    updateEventMutation.mutate({ id: event.id, data: { status: "completed", notes: eventNotes[event.id] ?? event.notes ?? null } });
+  const handleStartSubflow = (substep: SubflowStep, event: CalendarEvent) => {
+    setSelectedEvent(event);
+    setStep(substep);
+    setExpandedEvent(null);
+  };
 
   return (
     <div>
@@ -210,19 +193,15 @@ export default function TodayPage() {
             const isExpanded = expandedEvent?.id === event.id;
             const isDone = event.status === "completed";
             const isSkipped = event.status === "skipped";
-            const isPlanned = event.status === "planned";
             const isGym = event.eventType === "gym";
             const isFloorball = event.eventType.startsWith("floorball");
             const isRunning = event.eventType === "running";
-            const isSimple = !isGym && !isFloorball && !isRunning;
-            const showFizjoPrompt = fizjoPromptId === event.id;
-            const savedData = parseNotes(event.notes);
 
             return (
               <div key={event.id}>
                 {/* Collapsed card */}
                 <button
-                  onClick={() => { setExpandedEvent(isExpanded ? null : event); setFizjoPromptId(null); }}
+                  onClick={() => setExpandedEvent(isExpanded ? null : event)}
                   className={cn(
                     "flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-colors",
                     isDone ? "bg-[#111111] border-[#c5e063]/25 hover:border-[#c5e063]/40"
@@ -249,143 +228,13 @@ export default function TodayPage() {
 
                 {/* Expanded panel */}
                 {isExpanded && (
-                  <div className="mt-1 rounded-2xl bg-[#111111] border border-white/[0.18] p-4 space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-semibold text-sm">{event.title}</p>
-                        <p className="text-xs text-white/40 mt-0.5">{EVENT_LABELS[event.eventType]}</p>
-                      </div>
-                      <button onClick={() => { setExpandedEvent(null); setFizjoPromptId(null); }} className="p-1 text-white/40 hover:text-white/70 transition-colors">
-                        <X size={16} strokeWidth={1.5} />
-                      </button>
-                    </div>
-
-                    {/* Description — only for non-gym or non-JSON descriptions */}
-                    {event.description && !event.description.startsWith("{") && (
-                      <p className="text-sm text-white/60 leading-relaxed">{event.description}</p>
-                    )}
-
-                    {/* Completed summary — zone/gym data (only non-JSON summary, no raw notes) */}
-                    {isDone && savedData && <CompletionSummary data={savedData} />}
-
-                    {/* Completed plain-text notes — only for simple events (fizjo etc.) */}
-                    {isDone && isSimple && event.notes && !savedData && (
-                      <p className="text-xs text-white/40 italic">"{event.notes}"</p>
-                    )}
-
-                    {/* Komentarz textarea — only for simple (fizjo/inne) planned events */}
-                    {isPlanned && isSimple && !showFizjoPrompt && (
-                      <div>
-                        <label className="mb-1.5 block text-[11px] uppercase tracking-widest text-white/40">Komentarz</label>
-                        <textarea
-                          value={eventNotes[event.id] ?? (event.notes || "")}
-                          onChange={(e) => setEventNotes((n) => ({ ...n, [event.id]: e.target.value }))}
-                          placeholder="Dodaj notatki..."
-                          rows={2}
-                          className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
-                        />
-                      </div>
-                    )}
-
-                    {/* ── Fizjo / Other ── */}
-                    {isPlanned && isSimple && !showFizjoPrompt && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            const notes = eventNotes[event.id] ?? event.notes ?? "";
-                            if (!notes.trim()) setFizjoPromptId(event.id);
-                            else handleSimpleComplete(event);
-                          }}
-                          disabled={updateEventMutation.isPending}
-                          className={btnPrimary}
-                        >
-                          Zakończono
-                        </button>
-                        <button onClick={() => handleSkip(event)} disabled={updateEventMutation.isPending} className={btnSecondary}>
-                          Niezrealizowano
-                        </button>
-                      </div>
-                    )}
-                    {isPlanned && isSimple && showFizjoPrompt && (
-                      <div className="space-y-3">
-                        <p className="text-sm text-white/60">Chcesz dodać notatkę z wizyty?</p>
-                        <textarea
-                          value={eventNotes[event.id] ?? ""}
-                          onChange={(e) => setEventNotes((n) => ({ ...n, [event.id]: e.target.value }))}
-                          placeholder="Np. zakres ruchu, ćwiczenia do domu..."
-                          rows={3}
-                          autoFocus
-                          className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
-                        />
-                        <div className="flex gap-2">
-                          <button onClick={() => handleSimpleComplete(event)} disabled={updateEventMutation.isPending} className={btnPrimary}>Zapisz z notatką</button>
-                          <button
-                            onClick={() => { setEventNotes((n) => ({ ...n, [event.id]: "" })); handleSimpleComplete(event); }}
-                            disabled={updateEventMutation.isPending}
-                            className={btnSecondary}
-                          >
-                            Bez notatki
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ── Unihokej ── */}
-                    {isPlanned && isFloorball && (
-                      <div className="flex gap-2">
-                        <button onClick={() => { setSelectedEvent(event); setStep("zone-stats"); setExpandedEvent(null); }} className={btnPrimary}>
-                          Zakończono
-                        </button>
-                        <button onClick={() => handleSkip(event)} disabled={updateEventMutation.isPending} className={btnSecondary}>
-                          Niezrealizowano
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ── Siłownia ── */}
-                    {isPlanned && isGym && (
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <button onClick={() => { setSelectedEvent(event); setStep("gym-quick"); setExpandedEvent(null); }} className={btnPrimary}>
-                            Zakończono
-                          </button>
-                          <button onClick={() => handleSkip(event)} disabled={updateEventMutation.isPending} className={btnSecondary}>
-                            Niezrealizowano
-                          </button>
-                        </div>
-                        <button onClick={() => { setSelectedEvent(event); setStep("gym-details"); setExpandedEvent(null); }} className={btnSecondary}>
-                          Szczegóły treningu
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ── Bieg ── */}
-                    {isPlanned && isRunning && (
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <button onClick={() => { setSelectedEvent(event); setStep("zone-stats"); setExpandedEvent(null); }} className={btnPrimary}>
-                            Zakończono
-                          </button>
-                          <button onClick={() => handleSkip(event)} disabled={updateEventMutation.isPending} className={btnSecondary}>
-                            Niezrealizowano
-                          </button>
-                        </div>
-                        <button onClick={() => { setSelectedEvent(event); setStep("zone-stats"); setExpandedEvent(null); }} className={btnSecondary}>
-                          Szczegóły treningu
-                        </button>
-                      </div>
-                    )}
-
-                    {/* ── Restore ── */}
-                    {!isPlanned && (
-                      <button
-                        onClick={() => updateEventMutation.mutate({ id: event.id, data: { status: "planned" } })}
-                        disabled={updateEventMutation.isPending}
-                        className={btnSecondary}
-                      >
-                        Przywróć jako zaplanowane
-                      </button>
-                    )}
+                  <div className="mt-1">
+                    <EventDetailPanel
+                      event={event}
+                      onClose={() => setExpandedEvent(null)}
+                      onEventUpdated={() => queryClient.invalidateQueries({ queryKey: ["today-events"] })}
+                      onStartSubflow={handleStartSubflow}
+                    />
                   </div>
                 )}
               </div>
@@ -406,39 +255,6 @@ export default function TodayPage() {
       </div>
     </div>
   );
-}
-
-// ─── Completion summary (shown on completed events) ───────────
-function CompletionSummary({ data }: { data: Record<string, any> }) {
-  if (data.type === "zone_stats" && data.zones) {
-    const filledZones = HR_ZONES.filter((z) => (data.zones[z.id] ?? 0) > 0);
-    if (filledZones.length === 0) return null;
-    return (
-      <div className="space-y-1.5">
-        <p className="text-[11px] uppercase tracking-widest text-white/40">Strefy tętna</p>
-        <div className="flex flex-wrap gap-2">
-          {filledZones.map((z) => (
-            <span key={z.id} className="rounded-full px-2.5 py-1 text-[10px] font-semibold" style={{ backgroundColor: `${z.color}20`, color: z.color }}>
-              {z.label} · {data.zones[z.id]} min
-            </span>
-          ))}
-          {data.rpe && <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60">RPE {data.rpe}</span>}
-        </div>
-        {data.sessionNotes && <p className="text-xs text-white/40 italic">"{data.sessionNotes}"</p>}
-      </div>
-    );
-  }
-
-  if (data.type === "gym_quick" || data.type === "gym_log") {
-    return (
-      <div className="flex flex-wrap gap-2">
-        {data.rpe && <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60">RPE {data.rpe}</span>}
-        {data.sessionNotes && <p className="w-full text-xs text-white/40 italic">"{data.sessionNotes}"</p>}
-      </div>
-    );
-  }
-
-  return null;
 }
 
 // ─── Zone Stats Form (unihokej + bieg) ───────────────────────

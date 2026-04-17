@@ -56,6 +56,7 @@ export default function ChatPage() {
         content: newContent,
         createdAt: new Date() as any,
         planSuggestion: null,
+        suggestionStatus: null,
         contextType: "chat",
         extractedData: null,
       };
@@ -99,13 +100,44 @@ export default function ChatPage() {
   };
 
   const applyMutation = useMutation({
-    mutationFn: (suggestion: any) =>
+    mutationFn: ({ messageId, suggestion }: { messageId: number; suggestion: any }) =>
       apiRequest("/api/calendar/apply-suggestion", {
         method: "POST",
-        body: JSON.stringify(suggestion),
+        body: JSON.stringify({ ...suggestion, messageId }),
       }),
-    onSuccess: () => {
+    onMutate: async ({ messageId }) => {
+      await queryClient.cancelQueries({ queryKey: ["chat"] });
+      const previous = queryClient.getQueryData<ChatMessage[]>(["chat"]);
+      queryClient.setQueryData<ChatMessage[]>(["chat"], (old) =>
+        (old || []).map((m) => (m.id === messageId ? { ...m, suggestionStatus: "accepted" } : m)),
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(["chat"], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat"] });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (messageId: number) =>
+      apiRequest(`/api/chat/messages/${messageId}/reject-suggestion`, { method: "POST" }),
+    onMutate: async (messageId) => {
+      await queryClient.cancelQueries({ queryKey: ["chat"] });
+      const previous = queryClient.getQueryData<ChatMessage[]>(["chat"]);
+      queryClient.setQueryData<ChatMessage[]>(["chat"], (old) =>
+        (old || []).map((m) => (m.id === messageId ? { ...m, suggestionStatus: "rejected" } : m)),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) queryClient.setQueryData(["chat"], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["chat"] });
     },
   });
 
@@ -149,7 +181,8 @@ export default function ChatPage() {
             <MessageBubble
               key={msg.id}
               message={msg}
-              onApply={(s) => applyMutation.mutate(s)}
+              onApply={(suggestion) => applyMutation.mutate({ messageId: msg.id, suggestion })}
+              onReject={() => rejectMutation.mutate(msg.id)}
             />
           ))}
 
@@ -201,14 +234,15 @@ export default function ChatPage() {
 function MessageBubble({
   message,
   onApply,
+  onReject,
 }: {
   message: ChatMessage;
   onApply: (suggestion: any) => void;
+  onReject: () => void;
 }) {
   const isUser = message.role === "user";
-  const [isApplied, setIsApplied] = useState(false);
-
   const suggestion = message.planSuggestion as any;
+  const status = message.suggestionStatus ?? null;
 
   return (
     <div className={cn("flex flex-col", isUser ? "items-end" : "items-start")}>
@@ -230,7 +264,7 @@ function MessageBubble({
           >
             <p className="whitespace-pre-wrap">{message.content}</p>
 
-            {!isUser && suggestion && !isApplied && (
+            {!isUser && suggestion && status === null && (
               <div className="mt-5 space-y-3 border-t border-white/[0.08] pt-4">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
                   Sugerowane zmiany na ten tydzień
@@ -253,18 +287,17 @@ function MessageBubble({
                 </div>
                 <div className="flex gap-2 pt-2">
                   <Button
-                    onClick={() => {
-                      onApply(suggestion);
-                      setIsApplied(true);
-                    }}
-                    className="flex-1 py-4 text-xs font-semibold rounded-full"
+                    size="sm"
+                    onClick={() => onApply(suggestion)}
+                    className="flex-1"
                   >
                     <Check size={14} strokeWidth={1} className="mr-1.5" /> Akceptuj
                   </Button>
                   <Button
+                    size="sm"
                     variant="outline"
-                    onClick={() => setIsApplied(true)}
-                    className="flex-1 py-4 text-xs font-semibold rounded-full"
+                    onClick={onReject}
+                    className="flex-1"
                   >
                     <X size={14} strokeWidth={1} className="mr-1.5" /> Odrzuć
                   </Button>
@@ -272,9 +305,15 @@ function MessageBubble({
               </div>
             )}
 
-            {isApplied && !isUser && suggestion && (
+            {!isUser && suggestion && status === "accepted" && (
               <div className="mt-4 flex items-center gap-1.5 rounded-xl bg-white/5 border border-white/[0.08] px-3 py-2 text-[10px] text-white/30 font-medium">
                 <Check size={12} strokeWidth={1} className="text-[#c5e063]" /> Zmiany zostały zastosowane
+              </div>
+            )}
+
+            {!isUser && suggestion && status === "rejected" && (
+              <div className="mt-4 flex items-center gap-1.5 rounded-xl bg-white/5 border border-white/[0.08] px-3 py-2 text-[10px] text-white/30 font-medium">
+                <X size={12} strokeWidth={1} className="text-white/40" /> Sugestia odrzucona
               </div>
             )}
           </div>

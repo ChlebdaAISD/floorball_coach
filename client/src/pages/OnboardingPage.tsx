@@ -53,6 +53,7 @@ export default function OnboardingPage() {
           content,
           createdAt: new Date() as any,
           planSuggestion: null,
+          suggestionStatus: null,
           contextType: "onboarding",
           extractedData: null,
         };

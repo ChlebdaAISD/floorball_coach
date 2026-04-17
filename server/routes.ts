@@ -395,7 +395,7 @@ export function registerRoutes(app: Express) {
   });
 
   app.post("/api/calendar/apply-suggestion", requireAuth, async (req, res) => {
-    const { changes } = req.body;
+    const { changes, messageId } = req.body;
     const userId = req.session.userId!;
     if (!changes || !Array.isArray(changes)) {
       return res.status(400).json({ error: "Nieprawidłowy format zmian" });
@@ -432,10 +432,36 @@ export function registerRoutes(app: Express) {
           }
         }
       }
+
+      if (typeof messageId === "number") {
+        await db
+          .update(chatMessages)
+          .set({ suggestionStatus: "accepted" })
+          .where(and(eq(chatMessages.id, messageId), eq(chatMessages.userId, userId)));
+      }
+
       res.json({ success: true });
     } catch (err) {
       console.error("Failed to apply suggestion:", err);
       res.status(500).json({ error: "Błąd podczas wprowadzania zmian" });
+    }
+  });
+
+  app.post("/api/chat/messages/:id/reject-suggestion", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    const userId = req.session.userId!;
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "Nieprawidłowy identyfikator" });
+    }
+    try {
+      await db
+        .update(chatMessages)
+        .set({ suggestionStatus: "rejected" })
+        .where(and(eq(chatMessages.id, id), eq(chatMessages.userId, userId)));
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Failed to reject suggestion:", err);
+      res.status(500).json({ error: "Błąd podczas odrzucania sugestii" });
     }
   });
 
