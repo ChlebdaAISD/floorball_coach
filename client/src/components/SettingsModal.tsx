@@ -243,7 +243,6 @@ export function SettingsModal() {
                       value={form.sport}
                       onChange={(e) => handleChange("sport", e.target.value)}
                       placeholder="Np. unihokej"
-                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -253,7 +252,6 @@ export function SettingsModal() {
                       value={form.sportPosition}
                       onChange={(e) => handleChange("sportPosition", e.target.value)}
                       placeholder="Np. napastnik"
-                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -264,7 +262,6 @@ export function SettingsModal() {
                       value={form.experienceYears}
                       onChange={(e) => handleChange("experienceYears", e.target.value)}
                       placeholder="10"
-                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -277,7 +274,6 @@ export function SettingsModal() {
                       value={form.trainingDaysPerWeek}
                       onChange={(e) => handleChange("trainingDaysPerWeek", e.target.value)}
                       placeholder="4"
-                      className="h-12"
                     />
                   </div>
                 </div>
@@ -297,7 +293,6 @@ export function SettingsModal() {
                       value={form.age}
                       onChange={(e) => handleChange("age", e.target.value)}
                       placeholder="32"
-                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -308,7 +303,6 @@ export function SettingsModal() {
                       value={form.heightCm}
                       onChange={(e) => handleChange("heightCm", e.target.value)}
                       placeholder="180"
-                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -320,7 +314,6 @@ export function SettingsModal() {
                       value={form.weightKg}
                       onChange={(e) => handleChange("weightKg", e.target.value)}
                       placeholder="78"
-                      className="h-12"
                     />
                   </div>
                 </div>
@@ -476,7 +469,6 @@ export function SettingsModal() {
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
                     placeholder="Europe/Warsaw"
-                    className="h-12"
                   />
                   <p className="text-[11px] text-white/40 font-light">
                     Format IANA, np. Europe/Warsaw. Wpływa na godziny wysyłki powiadomień.

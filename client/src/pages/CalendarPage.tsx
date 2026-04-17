@@ -30,6 +30,7 @@ import { cn, apiRequest, EVENT_COLORS, EVENT_LABELS } from "@/lib/utils";
 import type { CalendarEvent } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
 
@@ -447,15 +448,11 @@ function EventFormModal({
         <div className="space-y-5">
           <div className="space-y-2">
             <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Typ</label>
-            <select
-              value={eventType}
-              onChange={(e) => setEventType(e.target.value)}
-              className="flex h-14 w-full rounded-2xl border border-white/[0.15] bg-[#111111] px-4 text-base text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
-            >
+            <Select value={eventType} onChange={(e) => setEventType(e.target.value)}>
               {Object.entries(EVENT_LABELS).map(([key, label]) => (
                 <option key={key} value={key} className="bg-[#111111]">{label}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-2">
             <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Nazwa</label>
