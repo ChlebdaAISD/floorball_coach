@@ -30,8 +30,8 @@ import { cn, apiRequest, EVENT_COLORS, EVENT_LABELS } from "@/lib/utils";
 import type { CalendarEvent } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { TopNav } from "@/components/TopNav";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSetTopNav } from "@/contexts/TopNavContext";
 
 type ViewMode = "week" | "month";
 
@@ -42,6 +42,40 @@ export default function CalendarPage() {
   const [showForm, setShowForm] = useState(false);
   const { openSettings } = useSettings();
   const queryClient = useQueryClient();
+
+  useSetTopNav(
+    () => ({
+      label: "Plan treningowy",
+      title: "Kalendarz",
+      right: (
+        <>
+          <button
+            onClick={() => setViewMode(viewMode === "week" ? "month" : "week")}
+            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+          >
+            {viewMode === "week" ? (
+              <LayoutGrid size={18} strokeWidth={1} />
+            ) : (
+              <Calendar size={18} strokeWidth={1} />
+            )}
+          </button>
+          <button
+            onClick={() => setSelectedDate(format(new Date(), "yyyy-MM-dd"))}
+            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+          >
+            <Plus size={18} strokeWidth={1} />
+          </button>
+          <button
+            onClick={openSettings}
+            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+          >
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        </>
+      ),
+    }),
+    [viewMode, openSettings],
+  );
 
   const range = useMemo(() => {
     if (viewMode === "week") {
@@ -94,38 +128,9 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="flex flex-col flex-1 bg-black text-white min-h-[100dvh]">
-      <TopNav
-        label="Plan treningowy"
-        title="Kalendarz"
-        right={
-          <>
-            <button
-              onClick={() => setViewMode(viewMode === "week" ? "month" : "week")}
-              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-            >
-              {viewMode === "week"
-                ? <LayoutGrid size={18} strokeWidth={1} />
-                : <Calendar size={18} strokeWidth={1} />}
-            </button>
-            <button
-              onClick={() => setSelectedDate(format(new Date(), "yyyy-MM-dd"))}
-              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-            >
-              <Plus size={18} strokeWidth={1} />
-            </button>
-            <button
-              onClick={openSettings}
-              className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-            >
-              <Settings size={18} strokeWidth={1} />
-            </button>
-          </>
-        }
-      />
-
-      {/* Navigation row — sticky below TopNav */}
-      <div className="sticky top-[60px] z-10 bg-black px-4 pb-3">
+    <div className="flex flex-col bg-black text-white">
+      {/* Navigation row — sticky at top of scroll container */}
+      <div className="sticky top-0 z-10 bg-black px-4 pt-4 pb-3">
         <div className="flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="rounded-full border border-white/[0.12] bg-[#111111] p-2.5 hover:border-white/25 transition-colors">
             <ChevronLeft size={18} strokeWidth={1} />

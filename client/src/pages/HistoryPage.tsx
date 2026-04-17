@@ -11,14 +11,30 @@ import {
   Loader2,
   Settings,
 } from "lucide-react";
-import { TopNav } from "@/components/TopNav";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSetTopNav } from "@/contexts/TopNavContext";
 
 type WorkoutType = "all" | "gym" | "floorball" | "running";
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<WorkoutType>("all");
   const { openSettings } = useSettings();
+
+  useSetTopNav(
+    () => ({
+      label: "Twoje treningi",
+      title: "Historia",
+      right: (
+        <button
+          onClick={openSettings}
+          className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+        >
+          <Settings size={18} strokeWidth={1} />
+        </button>
+      ),
+    }),
+    [openSettings],
+  );
 
   const { data: workouts = [], isLoading } = useQuery<any[]>({
     queryKey: ["workouts", filter],
@@ -37,18 +53,8 @@ export default function HistoryPage() {
   });
 
   return (
-    <div className="bg-black text-white min-h-[100dvh]">
-      <TopNav
-        label="Twoje treningi"
-        title="Historia"
-        right={
-          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
-            <Settings size={18} strokeWidth={1} />
-          </button>
-        }
-      />
-
-      <div className="px-4">
+    <div className="bg-black text-white">
+      <div className="px-4 pt-4">
       {/* Filter Chips */}
       <div className="mb-6 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
         {(["all", "gym", "floorball", "running"] as WorkoutType[]).map((t) => (

@@ -1,14 +1,6 @@
 import { useLocation } from "wouter";
-import { CalendarDays, Dumbbell, MessageCircle, BarChart3, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const TABS = [
-  { path: "/", label: "Dziś", icon: Dumbbell },
-  { path: "/kalendarz", label: "Kalendarz", icon: CalendarDays },
-  { path: "/trener", label: "Trener", icon: MessageCircle },
-  { path: "/statystyki", label: "Statystyki", icon: BarChart3 },
-  { path: "/historia", label: "Historia", icon: Clock },
-];
+import { TABS } from "@/lib/tabs";
 
 export function BottomNav() {
   const [location, setLocation] = useLocation();

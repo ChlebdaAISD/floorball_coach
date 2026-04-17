@@ -17,9 +17,9 @@ import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { CalendarEvent } from "@shared/schema";
 import { Button, buttonVariants } from "@/components/ui/Button";
-import { TopNav } from "@/components/TopNav";
 import { InsightList } from "@/components/InsightCard";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSetTopNav } from "@/contexts/TopNavContext";
 
 // ─── Button styles (sourced from Button component variants) ──
 const btnPrimary = cn(buttonVariants({ variant: "primary", size: "md" }), "w-full");
@@ -63,6 +63,25 @@ export default function TodayPage() {
   const [eventNotes, setEventNotes] = useState<Record<number, string>>({});
   const [fizjoPromptId, setFizjoPromptId] = useState<number | null>(null);
   const { openSettings } = useSettings();
+
+  useSetTopNav(
+    () =>
+      step === "events"
+        ? {
+            label: format(new Date(), "EEEE", { locale: pl }),
+            title: format(new Date(), "d MMMM", { locale: pl }),
+            right: (
+              <button
+                onClick={openSettings}
+                className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+              >
+                <Settings size={18} strokeWidth={1} />
+              </button>
+            ),
+          }
+        : null,
+    [step, openSettings],
+  );
 
   const updateEventMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
@@ -175,16 +194,7 @@ export default function TodayPage() {
 
   return (
     <div>
-      <TopNav
-        label={format(new Date(), "EEEE", { locale: pl })}
-        title={format(new Date(), "d MMMM", { locale: pl })}
-        right={
-          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
-            <Settings size={18} strokeWidth={1} />
-          </button>
-        }
-      />
-      <div className="px-4 space-y-4 pb-8">
+      <div className="px-4 space-y-4 pb-8 pt-4">
 
       <InsightList />
 

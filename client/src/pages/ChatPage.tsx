@@ -6,8 +6,8 @@ import { format } from "date-fns";
 import { pl } from "date-fns/locale";
 import type { ChatMessage } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
-import { TopNav } from "@/components/TopNav";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSetTopNav } from "@/contexts/TopNavContext";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
@@ -16,6 +16,22 @@ export default function ChatPage() {
   const stickToBottomRef = useRef(true);
   const { openSettings } = useSettings();
   const queryClient = useQueryClient();
+
+  useSetTopNav(
+    () => ({
+      label: "Asystent",
+      title: "Trener AI",
+      right: (
+        <button
+          onClick={openSettings}
+          className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+        >
+          <Settings size={18} strokeWidth={1} />
+        </button>
+      ),
+    }),
+    [openSettings],
+  );
 
   const { data: messages = [] } = useQuery<ChatMessage[]>({
     queryKey: ["chat"],
@@ -94,17 +110,7 @@ export default function ChatPage() {
   });
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-black text-white">
-      <TopNav
-        label="Asystent"
-        title="Trener AI"
-        right={
-          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
-            <Settings size={18} strokeWidth={1} />
-          </button>
-        }
-      />
-
+    <div className="flex flex-1 flex-col min-h-0 bg-black text-white">
       {/* Messages */}
       <div
         ref={scrollContainerRef}

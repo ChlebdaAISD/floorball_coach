@@ -17,11 +17,27 @@ import { format, parseISO } from "date-fns";
 import { pl } from "date-fns/locale";
 import { useMemo } from "react";
 import { Loader2, Settings } from "lucide-react";
-import { TopNav } from "@/components/TopNav";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useSetTopNav } from "@/contexts/TopNavContext";
 
 export default function DashboardPage() {
   const { openSettings } = useSettings();
+
+  useSetTopNav(
+    () => ({
+      label: "Przegląd",
+      title: "Statystyki",
+      right: (
+        <button
+          onClick={openSettings}
+          className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+        >
+          <Settings size={18} strokeWidth={1} />
+        </button>
+      ),
+    }),
+    [openSettings],
+  );
   const { data: readiness = [], isLoading: loadingR } = useQuery<any[]>({
     queryKey: ["dashboard-readiness"],
     queryFn: () => apiRequest("/api/dashboard/readiness?days=30"),
@@ -61,7 +77,7 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[100dvh] items-center justify-center bg-black">
+      <div className="flex h-full min-h-[40vh] items-center justify-center bg-black">
         <Loader2 size={20} strokeWidth={1} className="animate-spin text-white/40" />
       </div>
     );
@@ -80,17 +96,7 @@ export default function DashboardPage() {
 
   return (
     <div className="bg-black text-white">
-      <TopNav
-        label="Przegląd"
-        title="Statystyki"
-        right={
-          <button onClick={openSettings} className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors">
-            <Settings size={18} strokeWidth={1} />
-          </button>
-        }
-      />
-
-      <div className="px-4 space-y-6 pb-8">
+      <div className="px-4 space-y-6 pb-8 pt-4">
       {/* Readiness Trend */}
       <div className="rounded-2xl bg-[#111111] border border-white/[0.12] p-5">
         <h3 className="mb-6 text-[11px] font-semibold tracking-widest text-white/40 uppercase">

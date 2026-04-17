@@ -243,6 +243,7 @@ export function SettingsModal() {
                       value={form.sport}
                       onChange={(e) => handleChange("sport", e.target.value)}
                       placeholder="Np. unihokej"
+                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -252,6 +253,7 @@ export function SettingsModal() {
                       value={form.sportPosition}
                       onChange={(e) => handleChange("sportPosition", e.target.value)}
                       placeholder="Np. napastnik"
+                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -262,6 +264,7 @@ export function SettingsModal() {
                       value={form.experienceYears}
                       onChange={(e) => handleChange("experienceYears", e.target.value)}
                       placeholder="10"
+                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -274,6 +277,7 @@ export function SettingsModal() {
                       value={form.trainingDaysPerWeek}
                       onChange={(e) => handleChange("trainingDaysPerWeek", e.target.value)}
                       placeholder="4"
+                      className="h-12"
                     />
                   </div>
                 </div>
@@ -293,6 +297,7 @@ export function SettingsModal() {
                       value={form.age}
                       onChange={(e) => handleChange("age", e.target.value)}
                       placeholder="32"
+                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -303,6 +308,7 @@ export function SettingsModal() {
                       value={form.heightCm}
                       onChange={(e) => handleChange("heightCm", e.target.value)}
                       placeholder="180"
+                      className="h-12"
                     />
                   </div>
                   <div className="space-y-2">
@@ -314,6 +320,7 @@ export function SettingsModal() {
                       value={form.weightKg}
                       onChange={(e) => handleChange("weightKg", e.target.value)}
                       placeholder="78"
+                      className="h-12"
                     />
                   </div>
                 </div>
@@ -327,9 +334,9 @@ export function SettingsModal() {
                           key={opt.value}
                           type="button"
                           onClick={() => handleChange("gymExperienceLevel", isActive ? "" : opt.value)}
-                          className={`h-12 rounded-full border text-sm transition-colors ${
+                          className={`h-10 rounded-full border px-4 text-sm transition-colors ${
                             isActive
-                              ? "border-[#c5e063] bg-[#c5e063]/10 text-[#c5e063]"
+                              ? "border-[#c5e063] bg-[#c5e063] text-black"
                               : "border-white/15 text-white/70 hover:border-white/40"
                           }`}
                         >
@@ -349,9 +356,9 @@ export function SettingsModal() {
                           key={f}
                           type="button"
                           onClick={() => toggleFacility(f)}
-                          className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+                          className={`h-10 rounded-full border px-4 text-sm transition-colors ${
                             isActive
-                              ? "border-[#c5e063] bg-[#c5e063]/10 text-[#c5e063]"
+                              ? "border-[#c5e063] bg-[#c5e063] text-black"
                               : "border-white/15 text-white/70 hover:border-white/40"
                           }`}
                         >
@@ -373,6 +380,7 @@ export function SettingsModal() {
 
               <Button
                 variant="primary"
+                size="md"
                 onClick={() => saveMutation.mutate(form)}
                 disabled={saveMutation.isPending}
                 className="w-full"
@@ -468,6 +476,7 @@ export function SettingsModal() {
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
                     placeholder="Europe/Warsaw"
+                    className="h-12"
                   />
                   <p className="text-[11px] text-white/40 font-light">
                     Format IANA, np. Europe/Warsaw. Wpływa na godziny wysyłki powiadomień.
@@ -475,6 +484,7 @@ export function SettingsModal() {
                 </div>
                 <Button
                   variant="outline"
+                  size="md"
                   onClick={() => saveNotificationsMutation.mutate({ emailNudges, timezone })}
                   disabled={saveNotificationsMutation.isPending}
                   className="w-full"
@@ -491,17 +501,17 @@ export function SettingsModal() {
                     Na pewno chcesz się wylogować?
                   </p>
                   <div className="flex gap-2">
-                    <Button variant="primary" onClick={handleLogout} className="flex-1">
+                    <Button variant="primary" size="md" onClick={handleLogout} className="flex-1">
                       <LogOut size={14} strokeWidth={1.5} className="mr-2" />
                       Wyloguj
                     </Button>
-                    <Button variant="outline" onClick={() => setConfirmLogout(false)} className="flex-1">
+                    <Button variant="outline" size="md" onClick={() => setConfirmLogout(false)} className="flex-1">
                       Anuluj
                     </Button>
                   </div>
                 </div>
               ) : (
-                <Button variant="outline" onClick={() => setConfirmLogout(true)} className="w-full">
+                <Button variant="outline" size="md" onClick={() => setConfirmLogout(true)} className="w-full">
                   <LogOut size={14} strokeWidth={1.5} className="mr-2" />
                   Wyloguj
                 </Button>
