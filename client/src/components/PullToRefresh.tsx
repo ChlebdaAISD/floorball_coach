@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
 
 const THRESHOLD = 80; // px to pull before triggering refresh
@@ -7,9 +7,11 @@ const THRESHOLD = 80; // px to pull before triggering refresh
 interface Props {
   children: ReactNode;
   scrollContainerId?: string;
+  /** If provided, only these queries are invalidated on pull. Otherwise all. */
+  queryKeys?: QueryKey[];
 }
 
-export function PullToRefresh({ children, scrollContainerId = "scroll-container" }: Props) {
+export function PullToRefresh({ children, scrollContainerId = "scroll-container", queryKeys }: Props) {
   const queryClient = useQueryClient();
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -56,12 +58,18 @@ export function PullToRefresh({ children, scrollContainerId = "scroll-container"
     if (dist >= THRESHOLD * 0.7 && !isRefreshing) {
       setIsRefreshing(true);
       try {
-        await queryClient.invalidateQueries();
+        if (queryKeys && queryKeys.length > 0) {
+          await Promise.all(
+            queryKeys.map((key) => queryClient.invalidateQueries({ queryKey: key })),
+          );
+        } else {
+          await queryClient.invalidateQueries();
+        }
       } finally {
         setIsRefreshing(false);
       }
     }
-  }, [pullDistance, isRefreshing, queryClient]);
+  }, [pullDistance, isRefreshing, queryClient, queryKeys]);
 
   const indicatorOpacity = Math.min(pullDistance / (THRESHOLD * 0.7), 1);
   const indicatorRotation = (pullDistance / THRESHOLD) * 360;

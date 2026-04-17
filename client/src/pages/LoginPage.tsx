@@ -8,14 +8,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
-  const { login, register, isLoggingIn, loginError } = useAuth();
+  const { login, register, isLoggingIn, isRegistering, loginError, registerError } = useAuth();
+  const isPending = mode === "login" ? isLoggingIn : isRegistering;
+  const error = mode === "login" ? loginError : registerError;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === "login") {
-      await login({ email, password });
-    } else {
-      await register({ email, username, password });
+    if (isPending) return;
+    try {
+      if (mode === "login") {
+        await login({ email, password });
+      } else {
+        await register({ email, username, password });
+      }
+    } catch {
+      // Error surface comes from mutation.error — no need to re-throw.
     }
   };
 
@@ -63,18 +70,18 @@ export default function LoginPage() {
           />
           <Button
             type="submit"
-            disabled={isLoggingIn || !email || !password || (mode === "register" && !username)}
+            disabled={isPending || !email || !password || (mode === "register" && !username)}
             className="w-full"
           >
-            {isLoggingIn
+            {isPending
               ? mode === "login" ? "Logowanie..." : "Rejestracja..."
               : mode === "login" ? "Zaloguj się →" : "Zarejestruj się →"}
           </Button>
         </form>
 
-        {loginError && (
+        {error && (
           <p className="text-center text-sm text-red-400 mt-6 font-light tracking-wide">
-            {loginError.message || "Błąd logowania"}
+            {error.message || (mode === "login" ? "Błąd logowania" : "Błąd rejestracji")}
           </p>
         )}
 

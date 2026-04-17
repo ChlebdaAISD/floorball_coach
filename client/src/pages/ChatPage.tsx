@@ -12,6 +12,8 @@ import { useSettings } from "@/contexts/SettingsContext";
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const { openSettings } = useSettings();
   const queryClient = useQueryClient();
 
@@ -57,12 +59,27 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
+    if (!stickToBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sendMutation.isPending]);
 
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  };
+
   const handleSend = () => {
     if (!input.trim() || sendMutation.isPending) return;
+    stickToBottomRef.current = true;
     sendMutation.mutate(input.trim());
+  };
+
+  const handleSuggestion = (suggestion: string) => {
+    const trimmed = suggestion.trim();
+    if (!trimmed || sendMutation.isPending) return;
+    stickToBottomRef.current = true;
+    sendMutation.mutate(trimmed);
   };
 
   const applyMutation = useMutation({
@@ -89,7 +106,11 @@ export default function ChatPage() {
       />
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none"
+      >
         {messages.length === 0 && !sendMutation.isPending && (
           <div className="flex h-full flex-col items-center justify-center text-center px-4">
             <div className="mb-6 h-16 w-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
@@ -107,7 +128,7 @@ export default function ChatPage() {
               ].map((suggestion) => (
                 <button
                   key={suggestion}
-                  onClick={() => { sendMutation.mutate(suggestion); }}
+                  onClick={() => handleSuggestion(suggestion)}
                   className="rounded-2xl border border-white/[0.12] bg-[#111111] p-4 text-sm text-white/50 text-left font-light transition-colors hover:border-white/25 hover:text-white"
                 >
                   {suggestion}

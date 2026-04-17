@@ -19,7 +19,10 @@ export function BottomNav() {
   };
 
   return (
-    <nav className="shrink-0 bg-black/85 backdrop-blur-2xl border-t border-white/[0.08] pb-[env(safe-area-inset-bottom)]">
+    <nav
+      className="shrink-0 bg-black/85 backdrop-blur-2xl border-t border-white/[0.08]"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+    >
       <div className="flex items-stretch justify-around">
         {TABS.map((tab) => {
           const isActive =

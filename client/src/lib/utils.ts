@@ -5,6 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null) {
+  unauthorizedHandler = fn;
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function apiRequest<T = unknown>(
   url: string,
   options?: RequestInit,
@@ -15,8 +28,11 @@ export async function apiRequest<T = unknown>(
     ...options,
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+    if (res.status === 401 && !url.startsWith("/api/me") && !url.startsWith("/api/login")) {
+      unauthorizedHandler?.();
+    }
+    const text = await res.text().catch(() => "");
+    throw new ApiError(text || res.statusText, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json();

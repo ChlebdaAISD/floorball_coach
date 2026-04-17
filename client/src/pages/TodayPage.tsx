@@ -18,6 +18,7 @@ import { pl } from "date-fns/locale";
 import type { CalendarEvent } from "@shared/schema";
 import { Button, buttonVariants } from "@/components/ui/Button";
 import { TopNav } from "@/components/TopNav";
+import { InsightList } from "@/components/InsightCard";
 import { useSettings } from "@/contexts/SettingsContext";
 
 // ─── Button styles (sourced from Button component variants) ──
@@ -184,6 +185,8 @@ export default function TodayPage() {
         }
       />
       <div className="px-4 space-y-4 pb-8">
+
+      <InsightList />
 
       {/* Event list */}
       {todayEvents.length === 0 ? (
@@ -757,7 +760,11 @@ function SliderField({ label, value, min, max, disabled, onChange, color }: {
         />
       </div>
       <input type="range" min={min} max={max} disabled={disabled} value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
+        onChange={(e) => {
+          const parsed = parseInt(e.target.value);
+          const v = Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : min;
+          onChange(v);
+        }}
         className={cn("w-full accent-white", disabled && "opacity-30 cursor-not-allowed")}
       />
     </div>

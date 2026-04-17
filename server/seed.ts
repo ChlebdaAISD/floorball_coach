@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { eq } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
   users,
@@ -17,12 +18,14 @@ async function seed() {
     process.env.ADMIN_PASSWORD || "trening123",
     10,
   );
-  const [user] = await db
+  await db
     .insert(users)
     .values({ username: "lukasz", passwordHash })
-    .onConflictDoNothing()
-    .returning();
-  console.log("User:", user?.username || "already exists");
+    .onConflictDoNothing();
+  const [user] = await db.select().from(users).where(eq(users.username, "lukasz"));
+  if (!user) throw new Error("Failed to create or find seed user");
+  const userId = user.id;
+  console.log("User:", user.username);
 
   // ─── Exercises ───────────────────────────────────────────
   const exerciseData = [
@@ -71,6 +74,7 @@ async function seed() {
   const [plan] = await db
     .insert(trainingPlans)
     .values({
+      userId,
       name: "Off-Season: Odbudowa i Kuloodporność",
       phase: "phase_1",
       description: "2-miesięczny blok przygotowawczy. Praca ekscentryczna, ćwiczenia jednostronne, stabilizacja kolana.",
@@ -241,7 +245,7 @@ async function seed() {
     });
   }
 
-  await db.insert(calendarEvents).values(events);
+  await db.insert(calendarEvents).values(events.map((e) => ({ ...e, userId })));
   console.log(`Calendar events: ${events.length} created (4 weeks)`);
 
   console.log("Seed complete!");

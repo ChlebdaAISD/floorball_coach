@@ -3,10 +3,26 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
 import { registerRoutes } from "./routes";
+import { registerCronRoutes } from "./cron";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction && !process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET must be set in production");
+}
+const sessionSecret = process.env.SESSION_SECRET || "dev-secret-change-me";
+
+// Neon serverless occasionally drops its WebSocket mid-query; a single
+// unhandled rejection would otherwise take the whole process down.
+process.on("unhandledRejection", (err) => {
+  console.error("unhandledRejection:", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("uncaughtException:", err);
+});
 
 const app = express();
 app.set("trust proxy", 1);
@@ -27,21 +43,22 @@ app.use(
       tableName: "session",
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
     },
   }),
 );
 
 registerRoutes(app);
+registerCronRoutes(app);
 
-if (process.env.NODE_ENV === "production") {
+if (isProduction) {
   const publicDir = path.resolve(__dirname, "public");
   app.use(express.static(publicDir));
   app.get("*", (_req, res) => {

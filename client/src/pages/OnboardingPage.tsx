@@ -25,7 +25,7 @@ export default function OnboardingPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [topicsCovered, setTopicsCovered] = useState<Record<string, boolean>>({});
-  const [hasKickedOff, setHasKickedOff] = useState(false);
+  const hasKickedOffRef = useRef(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [lastFailedContent, setLastFailedContent] = useState<string | null>(null);
 
@@ -83,13 +83,20 @@ export default function OnboardingPage() {
     },
   });
 
-  // Kick off the conversation on first render if there are no messages
+  // Kick off the conversation on first render if there are no messages.
+  // Use a ref (not state) so double-invocation under StrictMode/fast re-renders
+  // cannot race through the guard before the flag is observed.
   useEffect(() => {
-    if (!hasKickedOff && messages.length === 0 && !sendMutation.isPending) {
-      setHasKickedOff(true);
+    if (hasKickedOffRef.current) return;
+    if (messages.length > 0) {
+      hasKickedOffRef.current = true;
+      return;
+    }
+    if (!sendMutation.isPending) {
+      hasKickedOffRef.current = true;
       sendMutation.mutate(null);
     }
-  }, [messages.length, hasKickedOff, sendMutation]);
+  }, [messages.length, sendMutation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

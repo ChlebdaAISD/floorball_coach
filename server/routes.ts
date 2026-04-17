@@ -13,7 +13,6 @@ import {
   workoutLogs,
   exerciseLogs,
   chatMessages,
-  weeklySummaries,
   athleteProfiles,
   injuries,
 } from "../shared/schema";
@@ -32,6 +31,12 @@ import {
   analyzeWorkout,
   ONBOARDING_TOPICS,
 } from "./gemini";
+import {
+  getOrGenerateInsights,
+  dismissInsight,
+  acceptInsight,
+  getInsight,
+} from "./insights";
 
 /** Return today's date as YYYY-MM-DD in Europe/Warsaw timezone */
 function todayInWarsaw(): string {
@@ -135,6 +140,8 @@ export function registerRoutes(app: Express) {
         offSeasonEnd: users.offSeasonEnd,
         onboardingComplete: users.onboardingComplete,
         onboardingProgress: users.onboardingProgress,
+        emailNudges: users.emailNudges,
+        timezone: users.timezone,
       })
       .from(users)
       .where(eq(users.id, req.session.userId!));
@@ -144,19 +151,24 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/settings", requireAuth, async (req, res) => {
     const {
-      trainingGoal, seasonStart, seasonEnd, offSeasonStart, offSeasonEnd
+      trainingGoal, seasonStart, seasonEnd, offSeasonStart, offSeasonEnd,
+      emailNudges, timezone,
     } = req.body;
     const userId = req.session.userId!;
 
+    const patch: Record<string, unknown> = {
+      trainingGoal,
+      seasonStart: seasonStart || null,
+      seasonEnd: seasonEnd || null,
+      offSeasonStart: offSeasonStart || null,
+      offSeasonEnd: offSeasonEnd || null,
+    };
+    if (typeof emailNudges === "boolean") patch.emailNudges = emailNudges;
+    if (typeof timezone === "string" && timezone.length > 0) patch.timezone = timezone;
+
     const [updated] = await db
       .update(users)
-      .set({
-        trainingGoal,
-        seasonStart: seasonStart || null,
-        seasonEnd: seasonEnd || null,
-        offSeasonStart: offSeasonStart || null,
-        offSeasonEnd: offSeasonEnd || null,
-      })
+      .set(patch)
       .where(eq(users.id, userId))
       .returning();
 
@@ -268,10 +280,28 @@ export function registerRoutes(app: Express) {
 
   app.put("/api/planned-exercises/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
+    const userId = req.session.userId!;
     const { sets, reps, weightKg, notes } = req.body;
+
+    // Verify ownership via plannedExercise → trainingDay → trainingPlan.userId
+    const [owned] = await db
+      .select({ id: plannedExercises.id })
+      .from(plannedExercises)
+      .innerJoin(trainingDays, eq(plannedExercises.trainingDayId, trainingDays.id))
+      .innerJoin(trainingPlans, eq(trainingDays.planId, trainingPlans.id))
+      .where(and(eq(plannedExercises.id, id), eq(trainingPlans.userId, userId)))
+      .limit(1);
+    if (!owned) return res.status(404).json({ error: "Nie znaleziono" });
+
+    const updates: Record<string, unknown> = {};
+    if (sets !== undefined) updates.sets = sets;
+    if (reps !== undefined) updates.reps = reps;
+    if (weightKg !== undefined) updates.weightKg = weightKg;
+    if (notes !== undefined) updates.notes = notes;
+
     const [updated] = await db
       .update(plannedExercises)
-      .set({ sets, reps, weightKg, notes })
+      .set(updates)
       .where(eq(plannedExercises.id, id))
       .returning();
     res.json(updated);
@@ -301,7 +331,25 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/calendar/events", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const data: InsertCalendarEvent = { ...req.body, userId };
+    const { date, time, eventType, title, description, isRecurring, recurrenceRule,
+      trainingDayId, source, status, notes } = req.body;
+    if (!date || !eventType || !title) {
+      return res.status(400).json({ error: "date, eventType i title są wymagane" });
+    }
+    const data: InsertCalendarEvent = {
+      userId,
+      date,
+      time: time ?? null,
+      eventType,
+      title,
+      description: description ?? null,
+      isRecurring: Boolean(isRecurring),
+      recurrenceRule: recurrenceRule ?? null,
+      trainingDayId: trainingDayId ?? null,
+      source: source || "manual",
+      status: status || "planned",
+      notes: notes ?? null,
+    };
     const [event] = await db
       .insert(calendarEvents)
       .values(data)
@@ -314,7 +362,7 @@ export function registerRoutes(app: Express) {
     const userId = req.session.userId!;
     // Whitelist safe fields to update
     const { date, time, eventType, title, description, isRecurring, recurrenceRule,
-      trainingDayId, workoutLogId, source, status, notes } = req.body;
+      trainingDayId, source, status, notes } = req.body;
     const updates: Record<string, unknown> = {};
     if (date !== undefined) updates.date = date;
     if (time !== undefined) updates.time = time;
@@ -324,7 +372,6 @@ export function registerRoutes(app: Express) {
     if (isRecurring !== undefined) updates.isRecurring = isRecurring;
     if (recurrenceRule !== undefined) updates.recurrenceRule = recurrenceRule;
     if (trainingDayId !== undefined) updates.trainingDayId = trainingDayId;
-    if (workoutLogId !== undefined) updates.workoutLogId = workoutLogId;
     if (source !== undefined) updates.source = source;
     if (status !== undefined) updates.status = status;
     if (notes !== undefined) updates.notes = notes;
@@ -393,6 +440,70 @@ export function registerRoutes(app: Express) {
   });
 
   // ─── Today ───────────────────────────────────────────────
+  // ─── Insights ────────────────────────────────────────────
+  app.get("/api/today/insights", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    try {
+      const insights = await getOrGenerateInsights(userId);
+      res.json(insights);
+    } catch (err) {
+      console.error("Failed to fetch insights:", err);
+      res.status(500).json({ error: "Błąd pobierania insightów" });
+    }
+  });
+
+  app.post("/api/insights/:id/dismiss", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Bad id" });
+    const ok = await dismissInsight(userId, id);
+    if (!ok) return res.status(404).json({ error: "Nie znaleziono" });
+    res.json({ success: true });
+  });
+
+  app.post("/api/insights/:id/accept", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const id = parseInt(req.params.id);
+    if (Number.isNaN(id)) return res.status(400).json({ error: "Bad id" });
+    const insight = await getInsight(userId, id);
+    if (!insight) return res.status(404).json({ error: "Nie znaleziono" });
+
+    const payload = (insight.actionPayload ?? {}) as Record<string, unknown>;
+    try {
+      if (
+        insight.actionKind === "add_rest_day" ||
+        insight.actionKind === "schedule_recovery"
+      ) {
+        if (typeof payload.date === "string") {
+          await db.insert(calendarEvents).values({
+            userId,
+            date: payload.date,
+            eventType: (payload.eventType as string) || "rest",
+            title: (payload.title as string) || "Odpoczynek",
+            source: "ai",
+          });
+        }
+      } else if (insight.actionKind === "skip_workout" && payload.eventId) {
+        await db
+          .update(calendarEvents)
+          .set({ status: "skipped" })
+          .where(
+            and(
+              eq(calendarEvents.id, payload.eventId as number),
+              eq(calendarEvents.userId, userId),
+            ),
+          );
+      }
+      // ease_today, swap_exercises, log_workout are handled client-side
+      // (navigate to relevant screen) — we just mark the insight as accepted.
+      await acceptInsight(userId, id);
+      res.json({ success: true, insight });
+    } catch (err) {
+      console.error("Failed to accept insight:", err);
+      res.status(500).json({ error: "Błąd zastosowania akcji" });
+    }
+  });
+
   app.get("/api/today/event", requireAuth, async (req, res) => {
     const today = todayInWarsaw();
     const userId = req.session.userId!;
@@ -477,8 +588,41 @@ export function registerRoutes(app: Express) {
   // ─── Workouts ────────────────────────────────────────────
   app.post("/api/workouts", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const { exerciseLogs: exLogs, eventNotes, ...workoutData } = req.body;
+    const { exerciseLogs: exLogsRaw, eventNotes, ...workoutData } = req.body;
     const data: InsertWorkoutLog = { ...workoutData, userId };
+
+    // Normalize exerciseLogs into strictly-typed records, dropping unknown fields
+    type ExLogInput = {
+      exerciseId?: unknown;
+      completed?: unknown;
+      plannedSets?: unknown;
+      plannedReps?: unknown;
+      plannedWeight?: unknown;
+      actualNotes?: unknown;
+      wasModifiedByAi?: unknown;
+      modificationReason?: unknown;
+      orderIndex?: unknown;
+    };
+    const exLogs: Array<Required<Pick<InsertExerciseLog, "exerciseId">> & Partial<InsertExerciseLog>> =
+      Array.isArray(exLogsRaw)
+        ? exLogsRaw
+            .map((raw: ExLogInput) => {
+              const exerciseId = Number(raw.exerciseId);
+              if (!Number.isInteger(exerciseId) || exerciseId <= 0) return null;
+              return {
+                exerciseId,
+                completed: raw.completed === true,
+                plannedSets: raw.plannedSets != null ? Number(raw.plannedSets) : null,
+                plannedReps: raw.plannedReps != null ? Number(raw.plannedReps) : null,
+                plannedWeight: raw.plannedWeight != null ? Number(raw.plannedWeight) : null,
+                actualNotes: raw.actualNotes != null ? String(raw.actualNotes).slice(0, 1000) : null,
+                wasModifiedByAi: raw.wasModifiedByAi === true,
+                modificationReason: raw.modificationReason != null ? String(raw.modificationReason).slice(0, 500) : null,
+                orderIndex: raw.orderIndex != null ? Number(raw.orderIndex) : 0,
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null)
+        : [];
 
     // Upsert: if a workout already exists for this calendar event, update it
     let workout: typeof workoutLogs.$inferSelect;
@@ -501,9 +645,9 @@ export function registerRoutes(app: Express) {
           .returning();
         workout = updated;
 
-        if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
+        if (exLogs.length > 0) {
           await db.delete(exerciseLogs).where(eq(exerciseLogs.workoutLogId, workout.id));
-          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
+          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex) => ({
             ...ex,
             workoutLogId: workout.id,
           }));
@@ -513,8 +657,8 @@ export function registerRoutes(app: Express) {
         const [inserted] = await db.insert(workoutLogs).values(data).returning();
         workout = inserted;
 
-        if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
-          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex: any) => ({
+        if (exLogs.length > 0) {
+          const logsToInsert: InsertExerciseLog[] = exLogs.map((ex) => ({
             ...ex,
             workoutLogId: workout.id,
           }));
@@ -527,7 +671,7 @@ export function registerRoutes(app: Express) {
     }
 
     // Recalculate tonnage for gym workouts
-    if (exLogs && Array.isArray(exLogs) && exLogs.length > 0) {
+    if (exLogs.length > 0) {
       let tonnage = 0;
       for (const ex of exLogs) {
         if (ex.completed && ex.plannedWeight && ex.plannedSets && ex.plannedReps) {
@@ -544,8 +688,10 @@ export function registerRoutes(app: Express) {
 
     // Update calendar event status
     if (data.calendarEventId) {
-      const eventUpdate: Record<string, any> = { status: "completed", workoutLogId: workout.id };
-      if (eventNotes !== undefined) eventUpdate.notes = eventNotes;
+      const eventUpdate: { status: string; notes?: string } = {
+        status: "completed",
+      };
+      if (typeof eventNotes === "string") eventUpdate.notes = eventNotes;
       await db
         .update(calendarEvents)
         .set(eventUpdate)
@@ -677,13 +823,56 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/dashboard/load", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const summaries = await db
-      .select()
-      .from(weeklySummaries)
-      .where(eq(weeklySummaries.userId, userId))
-      .orderBy(desc(weeklySummaries.weekStart))
-      .limit(12);
-    res.json(summaries);
+    // Aggregate directly from workout_logs + readiness_logs for the last 12 weeks.
+    // No denormalized summary table — keeps the data model simple and always fresh.
+    // Week buckets use ISO weeks (Monday start) so the output matches European convention.
+    const result = await db.execute(sql`
+      WITH weeks AS (
+        SELECT generate_series(
+          date_trunc('week', CURRENT_DATE - interval '11 weeks')::date,
+          date_trunc('week', CURRENT_DATE)::date,
+          interval '1 week'
+        )::date AS week_start
+      ),
+      workout_agg AS (
+        SELECT
+          date_trunc('week', date)::date AS week_start,
+          COUNT(*) FILTER (WHERE workout_type = 'gym')       AS gym_sessions,
+          COUNT(*) FILTER (WHERE workout_type = 'floorball') AS floorball_sessions,
+          COUNT(*) FILTER (WHERE workout_type = 'running')   AS running_sessions,
+          COALESCE(SUM(total_tonnage), 0)::float AS total_tonnage,
+          COALESCE(SUM(distance_km), 0)::float   AS total_distance_km
+        FROM workout_logs
+        WHERE user_id = ${userId}
+          AND date >= (CURRENT_DATE - interval '12 weeks')::date
+        GROUP BY 1
+      ),
+      readiness_agg AS (
+        SELECT
+          date_trunc('week', date)::date AS week_start,
+          AVG(training_readiness)::float AS avg_readiness,
+          AVG(pain_level)::float         AS avg_pain
+        FROM readiness_logs
+        WHERE user_id = ${userId}
+          AND date >= (CURRENT_DATE - interval '12 weeks')::date
+        GROUP BY 1
+      )
+      SELECT
+        w.week_start,
+        (w.week_start + interval '6 days')::date AS week_end,
+        COALESCE(wa.gym_sessions, 0)       AS gym_sessions,
+        COALESCE(wa.floorball_sessions, 0) AS floorball_sessions,
+        COALESCE(wa.running_sessions, 0)   AS running_sessions,
+        COALESCE(wa.total_tonnage, 0)      AS total_tonnage,
+        COALESCE(wa.total_distance_km, 0)  AS total_distance_km,
+        ra.avg_readiness,
+        ra.avg_pain
+      FROM weeks w
+      LEFT JOIN workout_agg   wa USING (week_start)
+      LEFT JOIN readiness_agg ra USING (week_start)
+      ORDER BY w.week_start DESC
+    `);
+    res.json(result.rows);
   });
 
   // ─── Chat (AI Coach) ────────────────────────────────────
@@ -782,16 +971,44 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/injuries", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const data: InsertInjury = { ...req.body, userId, source: req.body.source || "manual" };
+    const { bodyPart, injuryType, severity, description, dateOccurred,
+      dateResolved, isActive, managementNotes, source } = req.body;
+    if (!bodyPart || typeof bodyPart !== "string") {
+      return res.status(400).json({ error: "bodyPart wymagany" });
+    }
+    const data: InsertInjury = {
+      userId,
+      bodyPart: bodyPart.slice(0, 100),
+      injuryType: injuryType ? String(injuryType).slice(0, 100) : null,
+      severity: severity ? String(severity).slice(0, 100) : null,
+      description: description ? String(description).slice(0, 500) : null,
+      dateOccurred: dateOccurred || null,
+      dateResolved: dateResolved || null,
+      isActive: isActive !== undefined ? Boolean(isActive) : true,
+      managementNotes: managementNotes ? String(managementNotes).slice(0, 500) : null,
+      source: (source === "onboarding" || source === "chat") ? source : "manual",
+    };
     const [inserted] = await db.insert(injuries).values(data).returning();
     res.status(201).json(inserted);
   });
 
   app.put("/api/injuries/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
+    const { bodyPart, injuryType, severity, description, dateOccurred,
+      dateResolved, isActive, managementNotes } = req.body;
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (bodyPart !== undefined) updates.bodyPart = String(bodyPart).slice(0, 100);
+    if (injuryType !== undefined) updates.injuryType = injuryType === null ? null : String(injuryType).slice(0, 100);
+    if (severity !== undefined) updates.severity = severity === null ? null : String(severity).slice(0, 100);
+    if (description !== undefined) updates.description = description === null ? null : String(description).slice(0, 500);
+    if (dateOccurred !== undefined) updates.dateOccurred = dateOccurred;
+    if (dateResolved !== undefined) updates.dateResolved = dateResolved;
+    if (isActive !== undefined) updates.isActive = Boolean(isActive);
+    if (managementNotes !== undefined) updates.managementNotes = managementNotes === null ? null : String(managementNotes).slice(0, 500);
+
     const [updated] = await db
       .update(injuries)
-      .set({ ...req.body, updatedAt: new Date() })
+      .set(updates)
       .where(and(eq(injuries.id, id), eq(injuries.userId, req.session.userId!)))
       .returning();
     if (!updated) return res.status(404).json({ error: "Nie znaleziono" });
@@ -864,20 +1081,30 @@ export function registerRoutes(app: Express) {
         }
       }
 
-      // Update topics covered
-      const newCovered = { ...coveredTopics };
-      for (const topic of response.topicsCovered || []) {
-        if ((ONBOARDING_TOPICS as readonly string[]).includes(topic)) {
-          newCovered[topic] = true;
-        }
-      }
-      await db
-        .update(users)
-        .set({
-          onboardingProgress: newCovered,
-          ...(response.isComplete ? { onboardingComplete: true } : {}),
-        })
-        .where(eq(users.id, userId));
+      // Update topics covered — atomic merge to avoid lost updates under
+      // concurrent requests. Re-read inside transaction so the write is based
+      // on the latest DB state, not the stale read from outside.
+      const justCovered = (response.topicsCovered || []).filter((t) =>
+        (ONBOARDING_TOPICS as readonly string[]).includes(t),
+      );
+      const newCovered = await db.transaction(async (tx) => {
+        const [fresh] = await tx
+          .select({ onboardingProgress: users.onboardingProgress })
+          .from(users)
+          .where(eq(users.id, userId))
+          .for("update")
+          .limit(1);
+        const merged = { ...((fresh?.onboardingProgress as Record<string, boolean>) || {}) };
+        for (const topic of justCovered) merged[topic] = true;
+        await tx
+          .update(users)
+          .set({
+            onboardingProgress: merged,
+            ...(response.isComplete ? { onboardingComplete: true } : {}),
+          })
+          .where(eq(users.id, userId));
+        return merged;
+      });
 
       const [saved] = await db
         .insert(chatMessages)
@@ -968,10 +1195,13 @@ async function upsertAthleteProfile(
     .where(eq(athleteProfiles.userId, userId))
     .limit(1);
 
-  // Strip undefined for cleaner diff
+  // Strip undefined AND null — AI responses often return null for unknown
+  // fields, which would silently clear previously set values. Use
+  // explicit PATCH with { field: null } via a dedicated endpoint if clearing
+  // a field is ever needed; onboarding/chat callers must not wipe data.
   const cleanPatch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
-    if (v !== undefined) cleanPatch[k] = v;
+    if (v !== undefined && v !== null) cleanPatch[k] = v;
   }
 
   if (existing) {
@@ -998,18 +1228,21 @@ async function upsertInjuryFromAi(
   if (!injuryData || typeof injuryData !== "object") return;
   const data = injuryData as Record<string, unknown>;
 
-  const bodyPart = (data.body_part || data.bodyPart) as string | undefined;
+  const clip = (v: unknown, max: number): string | undefined =>
+    typeof v === "string" && v.length > 0 ? v.slice(0, max) : undefined;
+
+  const bodyPart = clip(data.body_part ?? data.bodyPart, 100);
   if (!bodyPart) return;
 
   const record = {
     userId,
     bodyPart,
-    injuryType: (data.injury_type || data.injuryType) as string | undefined,
-    severity: data.severity as string | undefined,
-    description: data.description as string | undefined,
-    dateOccurred: (data.date_occurred || data.dateOccurred) as string | undefined,
+    injuryType: clip(data.injury_type ?? data.injuryType, 100),
+    severity: clip(data.severity, 100),
+    description: clip(data.description, 500),
+    dateOccurred: clip(data.date_occurred ?? data.dateOccurred, 10),
     isActive: data.is_active !== undefined ? Boolean(data.is_active) : data.isActive !== undefined ? Boolean(data.isActive) : true,
-    managementNotes: (data.management_notes || data.managementNotes) as string | undefined,
+    managementNotes: clip(data.management_notes ?? data.managementNotes, 500),
     source,
   };
 

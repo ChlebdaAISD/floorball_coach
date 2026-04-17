@@ -7,6 +7,6 @@ if (!password) throw new Error("ADMIN_PASSWORD not set");
 
 const hash = await bcrypt.hash(password, 10);
 await db.update(users).set({ passwordHash: hash });
-console.log("Hasło zaktualizowane dla hasła:", password);
+console.log("Hasło zaktualizowane");
 await pool.end();
 process.exit(0);

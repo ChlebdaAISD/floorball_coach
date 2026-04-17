@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, formatShortDate } from "@/lib/utils";
-import { X, Loader2, AlertTriangle, LogOut } from "lucide-react";
+import { X, Loader2, AlertTriangle, LogOut, Mail } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -83,8 +83,46 @@ export function SettingsModal() {
     enabled: isOpen,
   });
 
+  const { data: me } = useQuery<{
+    emailNudges?: boolean;
+    timezone?: string;
+    email?: string | null;
+  } | null>({
+    queryKey: ["me"],
+    queryFn: () => apiRequest("/api/me"),
+    enabled: isOpen,
+  });
+
+  const [emailNudges, setEmailNudges] = useState(true);
+  const [timezone, setTimezone] = useState("Europe/Warsaw");
+  const notificationsHydratedRef = useRef(false);
+  useEffect(() => {
+    if (me && !notificationsHydratedRef.current) {
+      notificationsHydratedRef.current = true;
+      if (typeof me.emailNudges === "boolean") setEmailNudges(me.emailNudges);
+      if (me.timezone) setTimezone(me.timezone);
+    }
+  }, [me]);
+  useEffect(() => {
+    if (!isOpen) notificationsHydratedRef.current = false;
+  }, [isOpen]);
+
+  const saveNotificationsMutation = useMutation({
+    mutationFn: (data: { emailNudges: boolean; timezone: string }) =>
+      apiRequest("/api/settings", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }),
+  });
+
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const hasHydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) setConfirmLogout(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -395,12 +433,79 @@ export function SettingsModal() {
                 )}
               </div>
 
+              {/* Powiadomienia email */}
+              <div className="h-px bg-white/[0.08]" />
+              <div className="space-y-4">
+                <h3 className="text-[11px] font-semibold tracking-widest text-white/40 uppercase flex items-center gap-2">
+                  <Mail size={12} strokeWidth={1.5} className="text-white/60" />
+                  Powiadomienia email
+                </h3>
+                <label className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 cursor-pointer">
+                  <div className="flex-1">
+                    <p className="text-sm text-white font-medium">Przypomnienia trenera</p>
+                    <p className="mt-1 text-xs text-white/40 font-light">
+                      Poranny mail o gotowości i przypomnienie o zapisaniu treningu.
+                    </p>
+                    {!me?.email && (
+                      <p className="mt-2 text-xs text-amber-300/80 font-light">
+                        Dodaj email do konta, aby aktywować przypomnienia.
+                      </p>
+                    )}
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={emailNudges}
+                    onChange={(e) => setEmailNudges(e.target.checked)}
+                    className="h-5 w-5 accent-[#c5e063]"
+                  />
+                </label>
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">
+                    Strefa czasowa
+                  </label>
+                  <Input
+                    type="text"
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    placeholder="Europe/Warsaw"
+                  />
+                  <p className="text-[11px] text-white/40 font-light">
+                    Format IANA, np. Europe/Warsaw. Wpływa na godziny wysyłki powiadomień.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => saveNotificationsMutation.mutate({ emailNudges, timezone })}
+                  disabled={saveNotificationsMutation.isPending}
+                  className="w-full"
+                >
+                  {saveNotificationsMutation.isPending ? "Zapisywanie..." : "Zapisz powiadomienia"}
+                </Button>
+              </div>
+
               {/* Logout */}
               <div className="h-px bg-white/[0.08]" />
-              <Button variant="outline" onClick={handleLogout} className="w-full">
-                <LogOut size={14} strokeWidth={1.5} className="mr-2" />
-                Wyloguj
-              </Button>
+              {confirmLogout ? (
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-3">
+                  <p className="text-sm text-white/80 font-light">
+                    Na pewno chcesz się wylogować?
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="primary" onClick={handleLogout} className="flex-1">
+                      <LogOut size={14} strokeWidth={1.5} className="mr-2" />
+                      Wyloguj
+                    </Button>
+                    <Button variant="outline" onClick={() => setConfirmLogout(false)} className="flex-1">
+                      Anuluj
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="outline" onClick={() => setConfirmLogout(true)} className="w-full">
+                  <LogOut size={14} strokeWidth={1.5} className="mr-2" />
+                  Wyloguj
+                </Button>
+              )}
             </div>
           )}
         </div>

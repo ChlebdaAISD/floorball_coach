@@ -36,15 +36,23 @@ export default function SettingsPage() {
         interviewAnswers: "",
     });
 
+    // seasonStart/End come from Postgres `date` columns as YYYY-MM-DD strings.
+    // Passing through `new Date().toISOString()` shifts to UTC and can flip the
+    // day for users east/west of Greenwich — keep the original date-only string.
+    const toDateInput = (v?: string | null): string => {
+        if (!v) return "";
+        return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : "";
+    };
+
     useEffect(() => {
         if (user) {
             setForm({
                 bio: user.bio || "",
                 trainingGoal: user.trainingGoal || "",
-                seasonStart: user.seasonStart ? new Date(user.seasonStart).toISOString().split('T')[0] : "",
-                seasonEnd: user.seasonEnd ? new Date(user.seasonEnd).toISOString().split('T')[0] : "",
-                offSeasonStart: user.offSeasonStart ? new Date(user.offSeasonStart).toISOString().split('T')[0] : "",
-                offSeasonEnd: user.offSeasonEnd ? new Date(user.offSeasonEnd).toISOString().split('T')[0] : "",
+                seasonStart: toDateInput(user.seasonStart),
+                seasonEnd: toDateInput(user.seasonEnd),
+                offSeasonStart: toDateInput(user.offSeasonStart),
+                offSeasonEnd: toDateInput(user.offSeasonEnd),
                 interviewAnswers: user.interviewAnswers || "",
             });
         }

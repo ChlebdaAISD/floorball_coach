@@ -12,7 +12,6 @@ import {
   users,
   athleteProfiles,
   injuries,
-  weeklySummaries,
 } from "../shared/schema";
 import type { ReadinessLog } from "../shared/schema";
 
@@ -124,7 +123,7 @@ async function buildSystemPrompt(userId: number): Promise<string> {
 }
 
 // ─── Context Builder ───────────────────────────────────────
-async function buildContext(type: ContextType = "chat"): Promise<string> {
+async function buildContext(type: ContextType, userId: number): Promise<string> {
   // Per-type configuration
   const config = {
     chat: { readinessDays: 14, workoutDays: 14, calendarDays: 7, chatLimit: 10 },
@@ -144,13 +143,17 @@ async function buildContext(type: ContextType = "chat"): Promise<string> {
   const pastStartStr = pastStart.toISOString().split("T")[0];
   const futureEndStr = futureEnd.toISOString().split("T")[0];
 
-  const [recentReadiness, recentWorkouts, upcomingEvents, recentChat, recentSummaries] =
+  const chatWhere = type === "onboarding"
+    ? and(eq(chatMessages.userId, userId), eq(chatMessages.contextType, "onboarding"))
+    : eq(chatMessages.userId, userId);
+
+  const [recentReadiness, recentWorkouts, upcomingEvents, recentChat] =
     await Promise.all([
       config.readinessDays > 0
         ? db
             .select()
             .from(readinessLogs)
-            .where(gte(readinessLogs.date, pastStartStr))
+            .where(and(eq(readinessLogs.userId, userId), gte(readinessLogs.date, pastStartStr)))
             .orderBy(desc(readinessLogs.date))
             .limit(config.readinessDays)
         : Promise.resolve([]),
@@ -158,7 +161,7 @@ async function buildContext(type: ContextType = "chat"): Promise<string> {
         ? db
             .select()
             .from(workoutLogs)
-            .where(gte(workoutLogs.date, pastStartStr))
+            .where(and(eq(workoutLogs.userId, userId), gte(workoutLogs.date, pastStartStr)))
             .orderBy(desc(workoutLogs.date))
             .limit(config.workoutDays)
         : Promise.resolve([]),
@@ -168,6 +171,7 @@ async function buildContext(type: ContextType = "chat"): Promise<string> {
             .from(calendarEvents)
             .where(
               and(
+                eq(calendarEvents.userId, userId),
                 gte(calendarEvents.date, todayStr),
                 lte(calendarEvents.date, futureEndStr),
               ),
@@ -177,15 +181,9 @@ async function buildContext(type: ContextType = "chat"): Promise<string> {
       db
         .select()
         .from(chatMessages)
+        .where(chatWhere)
         .orderBy(desc(chatMessages.createdAt))
         .limit(config.chatLimit),
-      type === "weekly_planning"
-        ? db
-            .select()
-            .from(weeklySummaries)
-            .orderBy(desc(weeklySummaries.weekStart))
-            .limit(8)
-        : Promise.resolve([]),
     ]);
 
   let context = `\n--- DANE (dziś: ${todayStr}) ---\n`;
@@ -214,13 +212,6 @@ async function buildContext(type: ContextType = "chat"): Promise<string> {
     context += `\nKALENDARZ (najbliższe ${config.calendarDays} dni):\n`;
     for (const e of upcomingEvents) {
       context += `[ID:${e.id}] ${e.date} ${e.time || ""}: ${e.title} (${e.eventType}, status: ${e.status})\n`;
-    }
-  }
-
-  if (recentSummaries.length > 0) {
-    context += `\nPODSUMOWANIA TYGODNIOWE:\n`;
-    for (const s of [...recentSummaries].reverse()) {
-      context += `${s.weekStart}–${s.weekEnd}: gym=${s.gymSessions}, floorball=${s.floorballSessions}, run=${s.runningSessions}, tonaż=${s.totalTonnage}kg, avgReadiness=${s.avgReadiness || "?"}, ACWR=${s.tonnageAcwr || "?"}\n`;
     }
   }
 
@@ -254,7 +245,7 @@ function getSoleUserId(userId?: number): Promise<number> {
 }
 
 function stripJsonFences(raw: string): string {
-  return raw.replace(/```json\n?|\n?```/g, "").trim();
+  return raw.replace(/^```json\s*\n?|\n?\s*```$/gm, "").trim();
 }
 
 // ─── Chat with Coach ───────────────────────────────────────
@@ -267,7 +258,7 @@ export async function chatWithCoach(
 
   const resolvedUserId = await getSoleUserId(userId);
   const systemPrompt = await buildSystemPrompt(resolvedUserId);
-  const context = await buildContext("chat");
+  const context = await buildContext("chat", resolvedUserId);
 
   const prompt = `${systemPrompt}
 
@@ -365,10 +356,12 @@ export async function analyzeReadiness(
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
+  const resolvedUserId = await getSoleUserId(userId);
+
   const [event] = await db
     .select()
     .from(calendarEvents)
-    .where(eq(calendarEvents.id, calendarEventId));
+    .where(and(eq(calendarEvents.id, calendarEventId), eq(calendarEvents.userId, resolvedUserId)));
 
   if (!event?.trainingDayId) {
     return { summary: "Brak planu siłowego do modyfikacji.", modifications: [] };
@@ -395,9 +388,8 @@ export async function analyzeReadiness(
     .where(eq(plannedExercises.trainingDayId, event.trainingDayId))
     .orderBy(plannedExercises.orderIndex);
 
-  const resolvedUserId = await getSoleUserId(userId);
   const systemPrompt = await buildSystemPrompt(resolvedUserId);
-  const context = await buildContext("readiness");
+  const context = await buildContext("readiness", resolvedUserId);
 
   const prompt = `${systemPrompt}
 
@@ -597,18 +589,19 @@ export async function analyzeWorkout(
   const genAI = getGenAI();
   const model = genAI.getGenerativeModel({ model: MODEL_NAME });
 
+  const resolvedUserId = await getSoleUserId(userId);
+
   const [workout] = await db
     .select()
     .from(workoutLogs)
-    .where(eq(workoutLogs.id, workoutLogId));
+    .where(and(eq(workoutLogs.id, workoutLogId), eq(workoutLogs.userId, resolvedUserId)));
 
   if (!workout) {
     return { feedback: "Nie znaleziono treningu." };
   }
 
-  const resolvedUserId = await getSoleUserId(userId);
   const systemPrompt = await buildSystemPrompt(resolvedUserId);
-  const context = await buildContext("post_workout");
+  const context = await buildContext("post_workout", resolvedUserId);
 
   const prompt = `${systemPrompt}
 
