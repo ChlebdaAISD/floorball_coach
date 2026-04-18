@@ -16,7 +16,7 @@ import {
 import type { ReadinessLog } from "../shared/schema";
 
 // ─── Constants ─────────────────────────────────────────────
-const MODEL_NAME = "gemini-2.5-flash";
+const MODEL_NAME = "gemini-3-flash-preview";
 
 // Training rules that apply to any athlete
 const TRAINING_RULES = `ZASADY TRENINGOWE:
