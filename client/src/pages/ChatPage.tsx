@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
-import { Send, Loader2, Check, X, Bot, User, Settings } from "lucide-react";
+import { Send, Loader2, Check, X, Bot, Settings, History, ArrowLeft } from "lucide-react";
 import { cn, apiRequest } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
@@ -9,8 +9,12 @@ import { Button } from "@/components/ui/Button";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
 
+type HistoryDay = { day: string; message_count: number };
+
 export default function ChatPage() {
   const [input, setInput] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewingDay, setViewingDay] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -22,48 +26,35 @@ export default function ChatPage() {
       label: "Asystent",
       title: "Trener AI",
       right: (
-        <button
-          onClick={openSettings}
-          className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
-        >
-          <Settings size={18} strokeWidth={1} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+            aria-label="Historia rozmów"
+          >
+            <History size={18} strokeWidth={1} />
+          </button>
+          <button
+            onClick={openSettings}
+            className="rounded-full border border-white/20 p-3 text-white/50 hover:text-white hover:border-white/40 transition-colors"
+          >
+            <Settings size={18} strokeWidth={1} />
+          </button>
+        </div>
       ),
     }),
     [openSettings],
   );
 
   const { data: messages = [] } = useQuery<ChatMessage[]>({
-    queryKey: ["chat"],
-    queryFn: () => apiRequest("/api/chat?limit=50"),
+    queryKey: ["chat", "today"],
+    queryFn: () => apiRequest("/api/chat?date=today&limit=50"),
   });
 
-  const sendMutation = useMutation<ChatMessage, Error, string, { previousMessages?: ChatMessage[] }>({
+  const sendMutation = useMutation<ChatMessage, Error, string>({
     mutationKey: ["chat-send"],
-    onMutate: async (newContent) => {
+    onMutate: () => {
       setInput("");
-      await queryClient.cancelQueries({ queryKey: ["chat"] });
-      const previousMessages = queryClient.getQueryData<ChatMessage[]>(["chat"]);
-
-      const optimisticMessage: ChatMessage = {
-        id: Math.random(),
-        userId: 0,
-        role: "user",
-        content: newContent,
-        createdAt: new Date() as any,
-        planSuggestion: null,
-        suggestionStatus: null,
-        contextType: "chat",
-        extractedData: null,
-      };
-
-      queryClient.setQueryData<ChatMessage[]>(["chat"], (old) => [...(old || []), optimisticMessage]);
-      return { previousMessages };
-    },
-    onError: (_err, _newContent, context) => {
-      if (context?.previousMessages) {
-        queryClient.setQueryData(["chat"], context.previousMessages);
-      }
     },
   });
 
@@ -100,15 +91,15 @@ export default function ChatPage() {
         body: JSON.stringify({ ...suggestion, messageId }),
       }),
     onMutate: async ({ messageId }) => {
-      await queryClient.cancelQueries({ queryKey: ["chat"] });
-      const previous = queryClient.getQueryData<ChatMessage[]>(["chat"]);
-      queryClient.setQueryData<ChatMessage[]>(["chat"], (old) =>
+      await queryClient.cancelQueries({ queryKey: ["chat", "today"] });
+      const previous = queryClient.getQueryData<ChatMessage[]>(["chat", "today"]);
+      queryClient.setQueryData<ChatMessage[]>(["chat", "today"], (old) =>
         (old || []).map((m) => (m.id === messageId ? { ...m, suggestionStatus: "accepted" } : m)),
       );
       return { previous };
     },
     onError: (_err, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(["chat"], context.previous);
+      if (context?.previous) queryClient.setQueryData(["chat", "today"], context.previous);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["chat"] });
@@ -120,23 +111,41 @@ export default function ChatPage() {
     mutationFn: (messageId: number) =>
       apiRequest(`/api/chat/messages/${messageId}/reject-suggestion`, { method: "POST" }),
     onMutate: async (messageId) => {
-      await queryClient.cancelQueries({ queryKey: ["chat"] });
-      const previous = queryClient.getQueryData<ChatMessage[]>(["chat"]);
-      queryClient.setQueryData<ChatMessage[]>(["chat"], (old) =>
+      await queryClient.cancelQueries({ queryKey: ["chat", "today"] });
+      const previous = queryClient.getQueryData<ChatMessage[]>(["chat", "today"]);
+      queryClient.setQueryData<ChatMessage[]>(["chat", "today"], (old) =>
         (old || []).map((m) => (m.id === messageId ? { ...m, suggestionStatus: "rejected" } : m)),
       );
       return { previous };
     },
     onError: (_err, _id, context) => {
-      if (context?.previous) queryClient.setQueryData(["chat"], context.previous);
+      if (context?.previous) queryClient.setQueryData(["chat", "today"], context.previous);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["chat"] });
     },
   });
 
+  if (viewingDay) {
+    return (
+      <HistoryDayView
+        day={viewingDay}
+        onBack={() => setViewingDay(null)}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col min-h-0 bg-black text-white">
+      {historyOpen && (
+        <HistoryDrawer
+          onClose={() => setHistoryOpen(false)}
+          onSelect={(day) => {
+            setHistoryOpen(false);
+            setViewingDay(day);
+          }}
+        />
+      )}
       {/* Messages */}
       <div
         ref={scrollContainerRef}
@@ -229,10 +238,12 @@ function MessageBubble({
   message,
   onApply,
   onReject,
+  readOnly = false,
 }: {
   message: ChatMessage;
   onApply: (suggestion: any) => void;
   onReject: () => void;
+  readOnly?: boolean;
 }) {
   const isUser = message.role === "user";
   const suggestion = message.planSuggestion as any;
@@ -258,7 +269,7 @@ function MessageBubble({
           >
             <p className="whitespace-pre-wrap">{message.content}</p>
 
-            {!isUser && suggestion && status === null && (
+            {!isUser && suggestion && status === null && !readOnly && (
               <div className="mt-5 space-y-3 border-t border-white/[0.08] pt-4">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
                   Sugerowane zmiany na ten tydzień
@@ -312,6 +323,108 @@ function MessageBubble({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryDrawer({
+  onClose,
+  onSelect,
+}: {
+  onClose: () => void;
+  onSelect: (day: string) => void;
+}) {
+  const { data: days = [], isLoading } = useQuery<HistoryDay[]>({
+    queryKey: ["chat-history-days"],
+    queryFn: () => apiRequest("/api/chat/history-days?limit=5"),
+  });
+
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-sm" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="mt-auto rounded-t-3xl border-t border-white/[0.08] bg-[#0a0a0a] p-6 shadow-2xl"
+      >
+        <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/15" />
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-semibold tracking-wide text-white">Historia rozmów</h3>
+          <button
+            onClick={onClose}
+            className="rounded-full border border-white/15 p-2 text-white/50 hover:text-white hover:border-white/30 transition-colors"
+          >
+            <X size={14} strokeWidth={1} />
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="py-10 text-center text-sm text-white/30 font-light">Ładowanie…</div>
+        ) : days.length === 0 ? (
+          <div className="py-10 text-center text-sm text-white/30 font-light">Brak wcześniejszych rozmów</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {days.map((d) => {
+              const dayDate = new Date(d.day + "T00:00:00");
+              const label = format(dayDate, "EEEE, d MMMM yyyy", { locale: pl });
+              const isToday = d.day.slice(0, 10) === todayStr;
+              return (
+                <button
+                  key={d.day}
+                  onClick={() => onSelect(d.day.slice(0, 10))}
+                  className="flex items-center justify-between rounded-2xl border border-white/[0.1] bg-[#111111] px-4 py-3 text-left text-sm text-white/80 font-light transition-colors hover:border-white/25 hover:text-white"
+                >
+                  <div className="flex flex-col">
+                    <span className="capitalize">{label}</span>
+                    <span className="text-[11px] text-white/30">
+                      {d.message_count} wiad. {isToday && "· dzisiaj"}
+                    </span>
+                  </div>
+                  <ArrowLeft size={14} strokeWidth={1} className="rotate-180 text-white/30" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistoryDayView({ day, onBack }: { day: string; onBack: () => void }) {
+  const { data: messages = [], isLoading } = useQuery<ChatMessage[]>({
+    queryKey: ["chat", day],
+    queryFn: () => apiRequest(`/api/chat?date=${day}&limit=200`),
+  });
+
+  const dayLabel = format(new Date(day + "T00:00:00"), "EEEE, d MMMM yyyy", { locale: pl });
+
+  return (
+    <div className="flex flex-1 flex-col min-h-0 bg-black text-white">
+      <div className="shrink-0 flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+        <button
+          onClick={onBack}
+          className="rounded-full border border-white/20 p-2 text-white/60 hover:text-white hover:border-white/40 transition-colors"
+        >
+          <ArrowLeft size={16} strokeWidth={1} />
+        </button>
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-widest text-white/30">Historia</span>
+          <span className="text-sm font-medium capitalize">{dayLabel}</span>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center text-sm text-white/30 font-light">Ładowanie…</div>
+        ) : messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-white/30 font-light">Brak wiadomości</div>
+        ) : (
+          <div className="space-y-6">
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} message={msg} onApply={() => {}} onReject={() => {}} readOnly />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

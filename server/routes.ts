@@ -27,6 +27,8 @@ import type {
 import {
   analyzeReadiness,
   chatWithCoach,
+  chatWithCoachStream,
+  extractChatResponse,
   chatOnboarding,
   analyzeWorkout,
   ONBOARDING_TOPICS,
@@ -908,13 +910,46 @@ export function registerRoutes(app: Express) {
   app.get("/api/chat", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
     const limit = parseInt((req.query.limit as string) || "50");
+    const dateParam = req.query.date as string | undefined;
+
+    let dateFilter;
+    if (dateParam === "today") {
+      const today = todayInWarsaw();
+      dateFilter = sql`date(${chatMessages.createdAt} AT TIME ZONE 'Europe/Warsaw') = ${today}`;
+    } else if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      dateFilter = sql`date(${chatMessages.createdAt} AT TIME ZONE 'Europe/Warsaw') = ${dateParam}`;
+    }
+
+    const whereClause = dateFilter
+      ? and(
+          eq(chatMessages.userId, userId),
+          eq(chatMessages.contextType, "chat"),
+          dateFilter,
+        )
+      : and(eq(chatMessages.userId, userId), eq(chatMessages.contextType, "chat"));
+
     const messages = await db
       .select()
       .from(chatMessages)
-      .where(and(eq(chatMessages.userId, userId), eq(chatMessages.contextType, "chat")))
+      .where(whereClause)
       .orderBy(desc(chatMessages.createdAt))
       .limit(limit);
     res.json(messages.reverse());
+  });
+
+  // Returns last N dates (YYYY-MM-DD, Europe/Warsaw) on which the user had any chat messages.
+  app.get("/api/chat/history-days", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const limit = parseInt((req.query.limit as string) || "5");
+    const rows = await db.execute(sql`
+      SELECT date(created_at AT TIME ZONE 'Europe/Warsaw') AS day, COUNT(*)::int AS message_count
+      FROM chat_messages
+      WHERE user_id = ${userId} AND context_type = 'chat'
+      GROUP BY day
+      ORDER BY day DESC
+      LIMIT ${limit}
+    `);
+    res.json(rows.rows);
   });
 
   app.post("/api/chat", requireAuth, async (req, res) => {
@@ -958,6 +993,65 @@ export function registerRoutes(app: Express) {
         })
         .returning();
       res.json(saved);
+    }
+  });
+
+  // Streaming variant — Server-Sent Events. Each chunk is sent as `data: {"type":"chunk","text":"..."}\n\n`.
+  // Final event carries the saved assistant message: `data: {"type":"done","message":{...}}\n\n`.
+  app.post("/api/chat/stream", requireAuth, async (req, res) => {
+    const { content } = req.body;
+    if (!content) return res.status(400).json({ error: "Brak wiadomości" });
+    const userId = req.session.userId!;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+    await db.insert(chatMessages).values({ userId, role: "user", content, contextType: "chat" });
+
+    let accumulated = "";
+    try {
+      for await (const chunk of chatWithCoachStream(content, userId)) {
+        accumulated += chunk;
+        send({ type: "chunk", text: chunk });
+      }
+
+      const parsed = extractChatResponse(accumulated);
+      if (parsed.injuryUpdate) {
+        await upsertInjuryFromAi(userId, parsed.injuryUpdate, "chat");
+      }
+
+      const [saved] = await db
+        .insert(chatMessages)
+        .values({
+          userId,
+          role: "assistant",
+          content: parsed.text,
+          planSuggestion: parsed.planSuggestion || null,
+          contextType: "chat",
+          extractedData: parsed.injuryUpdate ? { injury: parsed.injuryUpdate } : null,
+        })
+        .returning();
+
+      send({ type: "done", message: saved });
+      res.end();
+    } catch (err) {
+      console.error("Chat stream error:", err);
+      const [saved] = await db
+        .insert(chatMessages)
+        .values({
+          userId,
+          role: "assistant",
+          content: "Przepraszam, wystąpił błąd podczas analizy. Spróbuj ponownie.",
+          contextType: "chat",
+        })
+        .returning();
+      send({ type: "error", message: saved });
+      res.end();
     }
   });
 

@@ -248,19 +248,10 @@ function stripJsonFences(raw: string): string {
   return raw.replace(/^```json\s*\n?|\n?\s*```$/gm, "").trim();
 }
 
-// ─── Chat with Coach ───────────────────────────────────────
-export async function chatWithCoach(
-  userMessage: string,
-  userId?: number,
-): Promise<{ text: string; planSuggestion?: unknown; injuryUpdate?: unknown }> {
-  const genAI = getGenAI();
-  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-
-  const resolvedUserId = await getSoleUserId(userId);
-  const systemPrompt = await buildSystemPrompt(resolvedUserId);
-  const context = await buildContext("chat", resolvedUserId);
-
-  const prompt = `${systemPrompt}
+async function buildChatPrompt(userMessage: string, userId: number): Promise<string> {
+  const systemPrompt = await buildSystemPrompt(userId);
+  const context = await buildContext("chat", userId);
+  return `${systemPrompt}
 
 ${context}
 
@@ -292,6 +283,72 @@ UWAGA: event_id MUSI być liczbą z pola [ID:...] z kalendarza powyżej. NIE wym
 Jeśli NIE proponujesz zmian ANI nie wykrywasz kontuzji, odpowiedz NORMALNYM TEKSTEM (bez JSON).
 
 Wiadomość zawodnika: ${userMessage}`;
+}
+
+export function extractChatResponse(raw: string): { text: string; planSuggestion?: unknown; injuryUpdate?: unknown } {
+  const stripped = stripJsonFences(raw);
+  try {
+    const parsed = JSON.parse(stripped);
+    if (parsed.text) {
+      return { text: parsed.text, planSuggestion: parsed.plan_suggestion, injuryUpdate: parsed.injury_update };
+    }
+  } catch { /* not pure JSON */ }
+
+  const codeBlockMatch = raw.match(/```json\s*\n([\s\S]*?)\n\s*```/);
+  if (codeBlockMatch) {
+    try {
+      const parsed = JSON.parse(codeBlockMatch[1].trim());
+      const textBefore = raw.slice(0, raw.indexOf("```json")).trim();
+      return {
+        text: parsed.text || textBefore || raw,
+        planSuggestion: parsed.plan_suggestion,
+        injuryUpdate: parsed.injury_update,
+      };
+    } catch { /* malformed */ }
+  }
+
+  const jsonMatch = raw.match(/\{[\s\S]*"(plan_suggestion|injury_update)"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const textBefore = raw.slice(0, raw.indexOf(jsonMatch[0])).trim();
+      return {
+        text: parsed.text || textBefore || raw,
+        planSuggestion: parsed.plan_suggestion,
+        injuryUpdate: parsed.injury_update,
+      };
+    } catch { /* malformed */ }
+  }
+
+  return { text: raw };
+}
+
+export async function* chatWithCoachStream(
+  userMessage: string,
+  userId?: number,
+): AsyncGenerator<string, void, unknown> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+  const resolvedUserId = await getSoleUserId(userId);
+  const prompt = await buildChatPrompt(userMessage, resolvedUserId);
+
+  const result = await model.generateContentStream(prompt);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+// ─── Chat with Coach ───────────────────────────────────────
+export async function chatWithCoach(
+  userMessage: string,
+  userId?: number,
+): Promise<{ text: string; planSuggestion?: unknown; injuryUpdate?: unknown }> {
+  const genAI = getGenAI();
+  const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+
+  const resolvedUserId = await getSoleUserId(userId);
+  const prompt = await buildChatPrompt(userMessage, resolvedUserId);
 
   const response = await generateWithTimeout(model, prompt);
 
