@@ -62,13 +62,15 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [messages, isSending]);
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
   const handleSend = () => {
@@ -136,7 +138,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 bg-black text-white">
+    <div className="relative flex flex-1 flex-col min-h-0 bg-black text-white">
       {historyOpen && (
         <HistoryDrawer
           onClose={() => setHistoryOpen(false)}
@@ -150,7 +152,7 @@ export default function ChatPage() {
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none"
+        className="flex-1 overflow-y-auto overscroll-contain px-4 py-6 scrollbar-none"
       >
         {messages.length === 0 && !isSending && (
           <div className="flex h-full flex-col items-center justify-center text-center px-4">

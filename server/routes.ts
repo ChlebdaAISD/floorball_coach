@@ -384,6 +384,15 @@ export function registerRoutes(app: Express) {
       .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)))
       .returning();
     if (!updated) return res.status(404).json({ error: "Nie znaleziono" });
+
+    // If the event was just cancelled, drop any workout log attached to it —
+    // a cancelled event means the training didn't happen.
+    if (updates.status === "cancelled") {
+      await db.delete(workoutLogs).where(
+        and(eq(workoutLogs.calendarEventId, id), eq(workoutLogs.userId, userId)),
+      );
+    }
+
     res.json(updated);
   });
 
@@ -737,9 +746,16 @@ export function registerRoutes(app: Express) {
     const type = req.query.type as string | undefined;
     const limit = parseInt((req.query.limit as string) || "20");
 
+    // Exclude logs tied to cancelled calendar events — the training didn't happen.
+    const notCancelled = sql`(${workoutLogs.calendarEventId} IS NULL OR NOT EXISTS (
+      SELECT 1 FROM ${calendarEvents}
+      WHERE ${calendarEvents.id} = ${workoutLogs.calendarEventId}
+        AND ${calendarEvents.status} = 'cancelled'
+    ))`;
+
     const whereClause = type
-      ? and(eq(workoutLogs.userId, userId), eq(workoutLogs.workoutType, type))
-      : eq(workoutLogs.userId, userId);
+      ? and(eq(workoutLogs.userId, userId), eq(workoutLogs.workoutType, type), notCancelled)
+      : and(eq(workoutLogs.userId, userId), notCancelled);
 
     const workoutList = await db
       .select()
