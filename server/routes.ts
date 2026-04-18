@@ -388,6 +388,9 @@ export function registerRoutes(app: Express) {
   app.delete("/api/calendar/events/:id", requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
     const userId = req.session.userId!;
+    await db.delete(workoutLogs).where(
+      and(eq(workoutLogs.calendarEventId, id), eq(workoutLogs.userId, userId))
+    );
     await db.delete(calendarEvents).where(
       and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId))
     );

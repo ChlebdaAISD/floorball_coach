@@ -428,7 +428,7 @@ function EventFormModal({
 }) {
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState("gym");
-  const [time, setTime] = useState("");
+  const [time, setTime] = useState("20:00");
   const [eventDate, setEventDate] = useState(date);
   const queryClient = useQueryClient();
 
@@ -490,14 +490,14 @@ function EventFormModal({
               placeholder={EVENT_LABELS[eventType]}
             />
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <div className="flex-1 min-w-0 space-y-1.5">
               <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Data</label>
               <Input
                 type="date"
                 value={eventDate}
                 onChange={(e) => setEventDate(e.target.value)}
-                className="[color-scheme:dark]"
+                className="[color-scheme:dark] h-11 px-3 text-[13px]"
               />
             </div>
             <div className="flex-1 min-w-0 space-y-1.5">
@@ -506,7 +506,7 @@ function EventFormModal({
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="[color-scheme:dark]"
+                className="[color-scheme:dark] h-11 px-3 text-[13px]"
               />
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { Send, Loader2, Check, X, Bot, User, Settings } from "lucide-react";
 import { cn, apiRequest } from "@/lib/utils";
 import { format } from "date-fns";
@@ -38,12 +38,8 @@ export default function ChatPage() {
     queryFn: () => apiRequest("/api/chat?limit=50"),
   });
 
-  const sendMutation = useMutation({
-    mutationFn: (content: string) =>
-      apiRequest<ChatMessage>("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({ content }),
-      }),
+  const sendMutation = useMutation<ChatMessage, Error, string, { previousMessages?: ChatMessage[] }>({
+    mutationKey: ["chat-send"],
     onMutate: async (newContent) => {
       setInput("");
       await queryClient.cancelQueries({ queryKey: ["chat"] });
@@ -69,16 +65,14 @@ export default function ChatPage() {
         queryClient.setQueryData(["chat"], context.previousMessages);
       }
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["chat"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
-    },
   });
+
+  const isSending = useIsMutating({ mutationKey: ["chat-send"] }) > 0;
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sendMutation.isPending]);
+  }, [messages, isSending]);
 
   const handleScroll = () => {
     const el = scrollContainerRef.current;
@@ -87,14 +81,14 @@ export default function ChatPage() {
   };
 
   const handleSend = () => {
-    if (!input.trim() || sendMutation.isPending) return;
+    if (!input.trim() || isSending) return;
     stickToBottomRef.current = true;
     sendMutation.mutate(input.trim());
   };
 
   const handleSuggestion = (suggestion: string) => {
     const trimmed = suggestion.trim();
-    if (!trimmed || sendMutation.isPending) return;
+    if (!trimmed || isSending) return;
     stickToBottomRef.current = true;
     sendMutation.mutate(trimmed);
   };
@@ -149,7 +143,7 @@ export default function ChatPage() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-6 scrollbar-none"
       >
-        {messages.length === 0 && !sendMutation.isPending && (
+        {messages.length === 0 && !isSending && (
           <div className="flex h-full flex-col items-center justify-center text-center px-4">
             <div className="mb-6 h-16 w-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
               <Bot size={28} strokeWidth={1} className="text-white/60" />
@@ -186,7 +180,7 @@ export default function ChatPage() {
             />
           ))}
 
-          {sendMutation.isPending && (
+          {isSending && (
             <div className="flex items-end gap-3 mt-4">
               <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/5 border border-white/10">
                 <Bot size={16} strokeWidth={1} className="text-white/50" />
@@ -220,7 +214,7 @@ export default function ChatPage() {
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sendMutation.isPending}
+            disabled={!input.trim() || isSending}
             className="flex h-[44px] w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-[#c5e063] text-black transition-all disabled:opacity-40 disabled:scale-95 active:scale-95 hover:bg-[#d4ef72]"
           >
             <Send size={16} strokeWidth={1} className="ml-0.5" />
