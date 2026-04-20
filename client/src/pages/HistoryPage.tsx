@@ -56,7 +56,10 @@ export default function HistoryPage() {
     <div className="bg-black text-white">
       <div className="px-4 pt-4">
       {/* Filter Chips */}
-      <div className="mb-6 flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+      <div
+        data-no-swipe
+        className="mb-6 flex gap-2 overflow-x-auto touch-pan-x pb-2 scrollbar-none"
+      >
         {(["all", "gym", "floorball", "running"] as WorkoutType[]).map((t) => (
           <button
             key={t}
