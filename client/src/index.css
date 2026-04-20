@@ -14,6 +14,15 @@
   --color-card: #111111;
 }
 
+/* Lock document to visible viewport — prevents iOS Safari URL bar / toolbar
+   from causing the app shell to drift or get cut off. All scrolling happens
+   inside nested containers. */
+html,
+body,
+#root {
+  height: 100%;
+}
+
 html {
   background-color: #000000;
   color: #ffffff;
@@ -21,8 +30,8 @@ html {
   -webkit-touch-callout: none;
 }
 
-/* Prevent overscroll bounce on mobile */
 body {
+  overflow: hidden;
   overscroll-behavior: none;
   background-color: #000000;
   color: #ffffff;

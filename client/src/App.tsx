@@ -19,7 +19,7 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border border-white/30 border-t-white" />
       </div>
     );
@@ -36,10 +36,9 @@ export default function App() {
   return (
     <SettingsProvider>
       <TopNavProvider>
-        <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+        <div className="flex h-full items-center justify-center bg-zinc-950">
           <div
-            className="relative flex w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl"
-            style={{ height: "min(100dvh, 900px)" }}
+            className="relative flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl md:h-[min(100dvh,900px)]"
           >
             <div className="shrink-0">
               <TopNavHost />

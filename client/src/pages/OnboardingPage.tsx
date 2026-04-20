@@ -123,11 +123,8 @@ export default function OnboardingPage() {
   // Completion screen
   if (isCompleted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <div
-          className="relative flex w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl px-8 text-center"
-          style={{ height: "min(100dvh, 900px)" }}
-        >
+      <div className="flex h-full items-center justify-center bg-zinc-950">
+        <div className="relative flex h-full w-full max-w-[430px] flex-col items-center justify-center overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl md:h-[min(100dvh,900px)] px-8 text-center">
           {/* Icon */}
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#c5e063]/10 border border-[#c5e063]/20 mb-6">
             <CheckCircle2 size={32} strokeWidth={1} className="text-[#c5e063]" />
@@ -170,11 +167,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-      <div
-        className="relative flex w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl"
-        style={{ height: "min(100dvh, 900px)" }}
-      >
+    <div className="flex h-full items-center justify-center bg-zinc-950">
+      <div className="relative flex h-full w-full max-w-[430px] flex-col overflow-hidden bg-black md:rounded-[32px] md:border md:border-white/[0.08] md:shadow-2xl md:h-[min(100dvh,900px)]">
         {/* Header with progress */}
         <div className="shrink-0 border-b border-white/[0.06] px-5 pt-6 pb-4">
           <div className="flex items-center gap-2 mb-3">
