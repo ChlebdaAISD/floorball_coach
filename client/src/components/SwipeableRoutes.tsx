@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type TouchEve
 import { useLocation } from "wouter";
 import { TABS, currentTabIndex } from "@/lib/tabs";
 
-const LOCK_PX = 10;
-const HORIZONTAL_RATIO = 1.2;
+const LOCK_PX = 12;
+const HORIZONTAL_RATIO = 1.7;
 const COMMIT_RATIO = 0.22; // of container width
 const COMMIT_MIN_PX = 60;
 const COMMIT_MAX_MS = 500;
@@ -26,7 +26,6 @@ function shouldIgnoreTarget(target: EventTarget | null): boolean {
 
 export function SwipeableRoutes({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
-  const [dragX, setDragX] = useState(0);
   const [animating, setAnimating] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -34,6 +33,32 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
   const modeRef = useRef<Mode>("idle");
   const ignoreRef = useRef(false);
   const pendingRef = useRef<{ path: string; width: number } | null>(null);
+  const dragXRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+
+  const applyTransform = useCallback((x: number, withTransition: boolean) => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.transition = withTransition ? `transform ${ANIM_MS}ms ${EASE}` : "none";
+    el.style.transform = `translate3d(${x}px, 0, 0)`;
+  }, []);
+
+  const scheduleTransform = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      applyTransform(dragXRef.current, false);
+    });
+  }, [applyTransform]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, []);
 
   const onTouchStart = useCallback(
     (e: TouchEvent) => {
@@ -73,10 +98,11 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
         const atLeftEdge = idx === 0 && dx > 0;
         const atRightEdge = idx === TABS.length - 1 && dx < 0;
         const effective = atLeftEdge || atRightEdge ? dx * EDGE_DAMPING : dx;
-        setDragX(effective);
+        dragXRef.current = effective;
+        scheduleTransform();
       }
     },
-    [animating, location],
+    [animating, location, scheduleTransform],
   );
 
   const onTouchEnd = useCallback(
@@ -95,9 +121,9 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
       modeRef.current = "idle";
 
       if (!locked) {
-        if (dragX !== 0) {
-          setAnimating(true);
-          setDragX(0);
+        if (dragXRef.current !== 0) {
+          dragXRef.current = 0;
+          applyTransform(0, false);
         }
         return;
       }
@@ -113,13 +139,16 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
       setAnimating(true);
       if (canCommit) {
         pendingRef.current = { path: TABS[nextIdx].path, width };
-        setDragX(dir === 1 ? -width : width);
+        const target = dir === 1 ? -width : width;
+        dragXRef.current = target;
+        applyTransform(target, true);
       } else {
         pendingRef.current = null;
-        setDragX(0);
+        dragXRef.current = 0;
+        applyTransform(0, true);
       }
     },
-    [location, dragX],
+    [location, applyTransform],
   );
 
   const onTransitionEnd = useCallback(() => {
@@ -129,10 +158,11 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
     if (pending) {
       setLocation(pending.path);
       document.getElementById("scroll-container")?.scrollTo({ top: 0 });
-      setDragX(0);
+      dragXRef.current = 0;
+      applyTransform(0, false);
     }
     setAnimating(false);
-  }, [animating, setLocation]);
+  }, [animating, setLocation, applyTransform]);
 
   // Safety net: if transitionend doesn't fire (e.g. DOM interrupted), clear state after max animation duration.
   useEffect(() => {
@@ -143,12 +173,13 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
       if (pending) {
         setLocation(pending.path);
         document.getElementById("scroll-container")?.scrollTo({ top: 0 });
-        setDragX(0);
+        dragXRef.current = 0;
+        applyTransform(0, false);
       }
       setAnimating(false);
     }, ANIM_MS + 120);
     return () => window.clearTimeout(timer);
-  }, [animating, setLocation]);
+  }, [animating, setLocation, applyTransform]);
 
   return (
     <div
@@ -159,8 +190,7 @@ export function SwipeableRoutes({ children }: { children: ReactNode }) {
       onTransitionEnd={onTransitionEnd}
       className="flex flex-1 flex-col min-h-0"
       style={{
-        transform: `translate3d(${dragX}px, 0, 0)`,
-        transition: animating ? `transform ${ANIM_MS}ms ${EASE}` : "none",
+        transform: "translate3d(0, 0, 0)",
         willChange: "transform",
         touchAction: "pan-y",
       }}

@@ -11,6 +11,27 @@ interface Props {
   queryKeys?: QueryKey[];
 }
 
+function isScrollable(el: HTMLElement): boolean {
+  if (el.scrollHeight <= el.clientHeight) return false;
+  const overflowY = window.getComputedStyle(el).overflowY;
+  return overflowY === "auto" || overflowY === "scroll";
+}
+
+// Walk up from target to find the nearest vertically scrollable ancestor.
+// PTR should only activate when that ancestor is the designated scroll container
+// AND it's at scrollTop === 0. If the target sits inside a nested scroll (e.g.
+// chat messages list) that has its own scroll, we skip PTR entirely so the inner
+// scroll handles the gesture natively.
+function findScrollableAncestor(target: EventTarget | null): HTMLElement | null {
+  let el: HTMLElement | null = target as HTMLElement | null;
+  while (el) {
+    if (el.hasAttribute?.("data-no-pull-to-refresh")) return el;
+    if (isScrollable(el)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export function PullToRefresh({ children, scrollContainerId = "scroll-container", queryKeys }: Props) {
   const queryClient = useQueryClient();
   const [pullDistance, setPullDistance] = useState(0);
@@ -18,34 +39,57 @@ export function PullToRefresh({ children, scrollContainerId = "scroll-container"
   const startYRef = useRef<number | null>(null);
   const isPullingRef = useRef(false);
 
-  const getScrollTop = () => {
-    const el = document.getElementById(scrollContainerId);
-    return el ? el.scrollTop : 0;
-  };
+  const getScrollContainer = () => document.getElementById(scrollContainerId);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (getScrollTop() === 0) {
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const container = getScrollContainer();
+      if (!container) return;
+
+      const scrollable = findScrollableAncestor(e.target);
+      if (!scrollable) return;
+
+      // Opt-out: element (or ancestor) marked as no-PTR.
+      if (scrollable.hasAttribute("data-no-pull-to-refresh")) return;
+
+      // Only trigger PTR when the nearest scroll ancestor IS the designated
+      // container. If a nested scroll sits between target and container, let
+      // the nested scroll own the gesture.
+      if (scrollable !== container) return;
+
+      if (container.scrollTop !== 0) return;
+
       startYRef.current = e.touches[0].clientY;
       isPullingRef.current = true;
-    }
-  }, []);
+    },
+    [scrollContainerId],
+  );
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!isPullingRef.current || startYRef.current === null) return;
-    if (getScrollTop() > 0) {
-      startYRef.current = null;
-      isPullingRef.current = false;
-      setPullDistance(0);
-      return;
-    }
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!isPullingRef.current || startYRef.current === null) return;
+      const container = getScrollContainer();
+      if (container && container.scrollTop > 0) {
+        startYRef.current = null;
+        isPullingRef.current = false;
+        setPullDistance(0);
+        return;
+      }
 
-    const delta = e.touches[0].clientY - startYRef.current;
-    if (delta > 0) {
-      // Rubber-band effect
-      const clamped = Math.min(delta * 0.5, THRESHOLD * 1.2);
-      setPullDistance(clamped);
-    }
-  }, []);
+      const delta = e.touches[0].clientY - startYRef.current;
+      if (delta > 0) {
+        // Rubber-band effect
+        const clamped = Math.min(delta * 0.5, THRESHOLD * 1.2);
+        setPullDistance(clamped);
+      } else if (delta < 0) {
+        // Finger moving up — user wants to scroll, not refresh. Release.
+        startYRef.current = null;
+        isPullingRef.current = false;
+        setPullDistance(0);
+      }
+    },
+    [scrollContainerId],
+  );
 
   const handleTouchEnd = useCallback(async () => {
     if (!isPullingRef.current) return;

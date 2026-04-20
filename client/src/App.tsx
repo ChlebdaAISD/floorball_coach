@@ -45,7 +45,7 @@ export default function App() {
               <TopNavHost />
             </div>
             <PullToRefresh>
-              <div id="scroll-container" className="flex flex-1 flex-col overflow-y-auto">
+              <div id="scroll-container" className="flex flex-1 flex-col min-h-0 overflow-y-auto">
                 <SwipeableRoutes>
                   <Switch>
                     <Route path="/" component={TodayPage} />

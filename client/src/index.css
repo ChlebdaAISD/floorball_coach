@@ -14,11 +14,11 @@
   --color-card: #111111;
 }
 
-/* Safe area for mobile bottom nav */
 html {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
   background-color: #000000;
   color: #ffffff;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 /* Prevent overscroll bounce on mobile */
@@ -27,6 +27,13 @@ body {
   background-color: #000000;
   color: #ffffff;
   font-family: var(--font-sans);
+}
+
+/* Remove 300ms tap delay on all interactive elements */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
 }
 
 /* Big touch targets for gym use */
