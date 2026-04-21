@@ -318,7 +318,7 @@ export function SettingsModal() {
                 </div>
                 <div className="space-y-2">
                   <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-widest">Poziom na siłowni</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {GYM_LEVEL_OPTIONS.map((opt) => {
                       const isActive = form.gymExperienceLevel === opt.value;
                       return (
@@ -326,7 +326,7 @@ export function SettingsModal() {
                           key={opt.value}
                           type="button"
                           onClick={() => handleChange("gymExperienceLevel", isActive ? "" : opt.value)}
-                          className={`h-10 rounded-full border px-4 text-sm transition-colors ${
+                          className={`h-10 whitespace-nowrap rounded-full border px-4 text-sm transition-colors ${
                             isActive
                               ? "border-[#c5e063] bg-[#c5e063] text-black"
                               : "border-white/15 text-white/70 hover:border-white/40"
@@ -348,7 +348,7 @@ export function SettingsModal() {
                           key={f}
                           type="button"
                           onClick={() => toggleFacility(f)}
-                          className={`h-10 rounded-full border px-4 text-sm transition-colors ${
+                          className={`h-10 whitespace-nowrap rounded-full border px-4 text-sm transition-colors ${
                             isActive
                               ? "border-[#c5e063] bg-[#c5e063] text-black"
                               : "border-white/15 text-white/70 hover:border-white/40"
