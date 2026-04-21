@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   addDays,
@@ -303,6 +303,14 @@ function DayDetail({
 }) {
   const queryClient = useQueryClient();
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   // Own query so date navigation always fetches fresh data regardless of calendar range
   const { data: events = [] } = useQuery<CalendarEvent[]>({

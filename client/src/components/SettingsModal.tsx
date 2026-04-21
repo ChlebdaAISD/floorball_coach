@@ -9,16 +9,15 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { useAuth } from "@/hooks/use-auth";
 import type { AthleteProfile, Injury, TrainingPlan } from "@shared/schema";
 
-const FACILITY_OPTIONS = ["gym", "pool", "home", "outdoor"] as const;
+const FACILITY_OPTIONS = ["gym", "pool", "outdoor"] as const;
 const FACILITY_LABELS: Record<string, string> = {
   gym: "Siłownia",
   pool: "Basen",
-  home: "Dom",
   outdoor: "Na zewnątrz",
 };
 const GYM_LEVEL_OPTIONS = [
   { value: "beginner", label: "Początkujący" },
-  { value: "intermediate", label: "Średniozaawansowany" },
+  { value: "intermediate", label: "Średni" },
   { value: "advanced", label: "Zaawansowany" },
 ];
 
