@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { X, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle2, Pencil } from "lucide-react";
 import { cn, apiRequest, EVENT_LABELS } from "@/lib/utils";
 import type { CalendarEvent } from "@shared/schema";
 import { buttonVariants } from "@/components/ui/Button";
@@ -28,10 +28,11 @@ interface Props {
   onClose: () => void;
   onEventUpdated: () => void;
   onStartSubflow?: (step: SubflowStep, event: CalendarEvent) => void;
+  onEdit?: (event: CalendarEvent) => void;
   mode?: "full" | "view-only";
 }
 
-export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflow, mode = "full" }: Props) {
+export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflow, onEdit, mode = "full" }: Props) {
   const isDone = event.status === "completed";
   const isPlanned = event.status === "planned";
   const isSkipped = event.status === "skipped";
@@ -97,9 +98,24 @@ export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflo
           <p className="font-semibold text-sm">{event.title}</p>
           <p className="text-xs text-white/40 mt-0.5">{EVENT_LABELS[event.eventType]}</p>
         </div>
-        <button onClick={onClose} className="p-1 text-white/40 hover:text-white/70 transition-colors">
-          <X size={16} strokeWidth={1.5} />
-        </button>
+        <div className="flex items-center gap-1">
+          {onEdit && event.status === "planned" && (
+            <button
+              onClick={() => onEdit(event)}
+              className="p-1 text-white/40 hover:text-white/70 transition-colors"
+              aria-label="Edytuj wydarzenie"
+            >
+              <Pencil size={16} strokeWidth={1.5} />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1 text-white/40 hover:text-white/70 transition-colors"
+            aria-label="Zamknij"
+          >
+            <X size={16} strokeWidth={1.5} />
+          </button>
+        </div>
       </div>
 
       {plainDescription && (

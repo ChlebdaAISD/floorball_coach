@@ -303,6 +303,7 @@ function DayDetail({
 }) {
   const queryClient = useQueryClient();
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   useEffect(() => {
     const el = document.getElementById("scroll-container");
@@ -406,6 +407,7 @@ function DayDetail({
                         event={ev}
                         onClose={() => setExpandedEventId(null)}
                         onEventUpdated={invalidateAfterChange}
+                        onEdit={(eventToEdit) => setEditingEvent(eventToEdit)}
                         mode="view-only"
                       />
                     </div>
@@ -423,41 +425,98 @@ function DayDetail({
           <Plus size={16} strokeWidth={1} /> Dodaj wydarzenie
         </button>
       </div>
+
+      {editingEvent && (
+        <EventFormModal
+          date={editingEvent.date}
+          initialEvent={editingEvent}
+          onClose={() => {
+            setEditingEvent(null);
+            invalidateAfterChange();
+          }}
+          onBack={() => setEditingEvent(null)}
+        />
+      )}
     </div>
   );
+}
+
+type ParsedDescription =
+  | { isGymPlan: true }
+  | { isGymPlan: false; warmup: string; mainBlock: string; cooldown: string; sessionNotes: string };
+
+function parseFreeformDescription(description: string | null | undefined): ParsedDescription | null {
+  if (!description) return null;
+  try {
+    const parsed = JSON.parse(description) as Record<string, any>;
+    if (Array.isArray(parsed.plan)) return { isGymPlan: true };
+    const warmup =
+      parsed.warmup && typeof parsed.warmup.notes === "string" ? parsed.warmup.notes : "";
+    const mainArr = Array.isArray(parsed.main) ? parsed.main : [];
+    const freeform = mainArr.find((m: any) => m?.kind === "freeform");
+    const mainBlock = freeform && typeof freeform.text === "string" ? freeform.text : "";
+    const cooldown =
+      parsed.cooldown && typeof parsed.cooldown.notes === "string" ? parsed.cooldown.notes : "";
+    const sessionNotes = typeof parsed.notes === "string" ? parsed.notes : "";
+    return { isGymPlan: false, warmup, mainBlock, cooldown, sessionNotes };
+  } catch {
+    return null;
+  }
 }
 
 function EventFormModal({
   date,
   onClose,
   onBack,
+  initialEvent,
 }: {
   date: string;
   onClose: () => void;
   onBack: () => void;
+  initialEvent?: CalendarEvent;
 }) {
-  const [title, setTitle] = useState("");
-  const [eventType, setEventType] = useState("gym");
-  const [time, setTime] = useState("20:00");
-  const [eventDate, setEventDate] = useState(date);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [warmup, setWarmup] = useState("");
-  const [mainBlock, setMainBlock] = useState("");
-  const [cooldown, setCooldown] = useState("");
-  const [sessionNotes, setSessionNotes] = useState("");
+  const isEdit = !!initialEvent;
+  const parsedInitial = useMemo(
+    () => (initialEvent ? parseFreeformDescription(initialEvent.description) : null),
+    [initialEvent],
+  );
+  const isGymPlan = parsedInitial?.isGymPlan === true;
+
+  const [title, setTitle] = useState(initialEvent?.title ?? "");
+  const [eventType, setEventType] = useState(initialEvent?.eventType ?? "gym");
+  const [time, setTime] = useState(initialEvent?.time ?? "20:00");
+  const [eventDate, setEventDate] = useState(initialEvent?.date ?? date);
+  const initialWarmup = parsedInitial && !parsedInitial.isGymPlan ? parsedInitial.warmup : "";
+  const initialMain = parsedInitial && !parsedInitial.isGymPlan ? parsedInitial.mainBlock : "";
+  const initialCooldown = parsedInitial && !parsedInitial.isGymPlan ? parsedInitial.cooldown : "";
+  const initialSessionNotes =
+    parsedInitial && !parsedInitial.isGymPlan ? parsedInitial.sessionNotes : "";
+  const [warmup, setWarmup] = useState(initialWarmup);
+  const [mainBlock, setMainBlock] = useState(initialMain);
+  const [cooldown, setCooldown] = useState(initialCooldown);
+  const [sessionNotes, setSessionNotes] = useState(initialSessionNotes);
+  const [detailsOpen, setDetailsOpen] = useState(
+    !!(initialWarmup || initialMain || initialCooldown || initialSessionNotes),
+  );
   const queryClient = useQueryClient();
 
   const showDetailsOption = !eventType.startsWith("floorball") && eventType !== "gym";
 
-  const createMutation = useMutation({
+  const mutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
-      apiRequest("/api/calendar/events", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
+      apiRequest(
+        isEdit ? `/api/calendar/events/${initialEvent!.id}` : "/api/calendar/events",
+        {
+          method: isEdit ? "PUT" : "POST",
+          body: JSON.stringify(data),
+        },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
       queryClient.invalidateQueries({ queryKey: ["calendar-day", eventDate] });
+      if (isEdit && initialEvent!.date !== eventDate) {
+        queryClient.invalidateQueries({ queryKey: ["calendar-day", initialEvent!.date] });
+      }
       onClose();
     },
   });
@@ -479,14 +538,24 @@ function EventFormModal({
         })
       : undefined;
 
-    createMutation.mutate({
+    const payload: Record<string, unknown> = {
       date: eventDate,
       time: time || null,
       eventType,
       title: title || EVENT_LABELS[eventType],
-      source: "manual",
-      ...(description ? { description } : {}),
-    });
+    };
+
+    if (isEdit) {
+      const preserveGymPlan = isGymPlan && eventType === "gym";
+      if (!preserveGymPlan) {
+        payload.description = description ?? null;
+      }
+    } else {
+      payload.source = "manual";
+      if (description) payload.description = description;
+    }
+
+    mutation.mutate(payload);
   };
 
   return (
@@ -499,7 +568,9 @@ function EventFormModal({
           <button type="button" onClick={onBack} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
             <ChevronLeft size={18} strokeWidth={1} />
           </button>
-          <h3 className="font-semibold text-base tracking-wide text-white">Nowe wydarzenie</h3>
+          <h3 className="font-semibold text-base tracking-wide text-white">
+            {isEdit ? "Edytuj wydarzenie" : "Nowe wydarzenie"}
+          </h3>
           <button type="button" onClick={onClose} className="rounded-full bg-white/5 border border-white/10 p-2 text-white/40 hover:text-white transition-colors">
             <X size={18} strokeWidth={1} />
           </button>
@@ -513,6 +584,9 @@ function EventFormModal({
                 <option key={key} value={key} className="bg-[#111111]">{label}</option>
               ))}
             </Select>
+            {isEdit && isGymPlan && (
+              <p className="text-[11px] text-white/30">Plan ćwiczeń edytowany osobno</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label className="block text-[11px] font-semibold tracking-widest text-white/40 uppercase">Nazwa</label>
@@ -615,10 +689,14 @@ function EventFormModal({
             type="submit"
             variant="primary"
             size="md"
-            disabled={createMutation.isPending}
+            disabled={mutation.isPending}
             className="w-full"
           >
-            {createMutation.isPending ? "Zapisuję..." : "Dodaj wydarzenie"}
+            {mutation.isPending
+              ? "Zapisuję..."
+              : isEdit
+                ? "Zapisz zmiany"
+                : "Dodaj wydarzenie"}
           </Button>
         </div>
       </form>
