@@ -263,7 +263,7 @@ odpowiedz WYŁĄCZNIE w formacie JSON (bez dodatkowego tekstu):
   "plan_suggestion": {
     "changes": [
       {"event_id": 42, "action": "cancel", "reason": "..."},
-      {"date": "2026-04-15", "time": "18:00", "action": "add", "event_type": "rest", "title": "...", "reason": "..."},
+      {"date": "2026-04-15", "time": "18:00", "action": "add", "event_type": "running", "title": "Bieg interwałowy", "reason": "...", "details": { "type": "running", "warmup": {"duration": "10 min", "notes": "trucht Z1"}, "main": [{"kind": "interval", "repeats": 6, "work": "400m @ 4:00/km", "rest": "90s jog", "notes": "Z4"}], "cooldown": {"duration": "5 min", "notes": "spacer + rozciąganie"}, "notes": "ogólne uwagi" }},
       {"event_id": 43, "action": "modify", "title": "nowy tytuł", "time": "20:00", "date": "2026-04-12", "event_type": "gym", "reason": "..."}
     ]
   },
@@ -279,6 +279,29 @@ odpowiedz WYŁĄCZNIE w formacie JSON (bez dodatkowego tekstu):
 Pole "plan_suggestion" — pomiń jeśli nie proponujesz zmian.
 Pole "injury_update" — pomiń jeśli użytkownik nie wspomina o bólu/kontuzji.
 UWAGA: event_id MUSI być liczbą z pola [ID:...] z kalendarza powyżej. NIE wymyślaj ID.
+
+POLE "details" (dla action="add"):
+- Dla event_type ∈ {"running", "rest"} — ZAWSZE wygeneruj pole "details" z konkretnym planem dostosowanym do kontuzji, celu i stanu zawodnika.
+- Dla event_type = "gym" — POMIŃ "details" (plan siłowy pochodzi z bazy treningów).
+- Dla event_type ∈ {"floorball_training", "floorball_match"} — POMIŃ "details" (treningi drużynowe, zawodnik nie decyduje o przebiegu).
+
+STRUKTURA "details":
+{
+  "type": "running" | "swim" | "rest" | "mobility" | "fizjo",
+  "warmup": { "duration": "5 min", "notes": "co robić" },
+  "main": [
+    // Dla interwałów:
+    { "kind": "interval", "repeats": 6, "work": "400m @ 4:00/km", "rest": "90s jog", "notes": "..." },
+    // Dla stałego tempa / ciągłego wysiłku:
+    { "kind": "steady", "duration": "20 min", "pace": "5:30/km", "hr_zone": "Z2", "notes": "..." },
+    // Dla ćwiczeń mobilności / fizjo / basenu (listowo):
+    { "kind": "exercise", "name": "Drenaż kostki", "sets": 3, "reps": 15, "notes": "wolne tempo" }
+  ],
+  "cooldown": { "duration": "5 min", "notes": "..." },
+  "notes": "ogólne uwagi do całej sesji (opcjonalne)"
+}
+
+Każdy obiekt w "main" MUSI mieć pole "kind" ∈ {"interval","steady","exercise"}. Podawaj konkretne liczby (czasy, tempa, tętno, serie, powtórzenia) — nie ogólniki typu "dużo", "spokojnie". Bądź zwięzły.
 
 Jeśli NIE proponujesz zmian ANI nie wykrywasz kontuzji, odpowiedz NORMALNYM TEKSTEM (bez JSON).
 

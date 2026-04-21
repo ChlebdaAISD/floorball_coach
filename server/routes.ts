@@ -423,13 +423,16 @@ export function registerRoutes(app: Express) {
             .set({ status: "cancelled" })
             .where(and(eq(calendarEvents.id, change.event_id), eq(calendarEvents.userId, userId)));
         } else if (change.action === "add" && change.date) {
+          const description = change.details
+            ? JSON.stringify(change.details)
+            : change.reason ?? null;
           await db.insert(calendarEvents).values({
             userId,
             date: change.date,
             time: change.time || null,
             eventType: change.event_type || "rest",
             title: change.title || "Dodane przez trenera",
-            description: change.reason,
+            description,
             source: "ai",
           });
         } else if (change.action === "modify" && change.event_id) {

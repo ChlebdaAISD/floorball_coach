@@ -8,11 +8,13 @@ import {
   workoutLogs,
 } from "../shared/schema";
 import {
+  renderDailyCoachTip,
   renderMorningReadiness,
   renderPostWorkout,
   sendEmailOnce,
 } from "./email";
 import { generateInsights } from "./insights";
+import { generateDailyTip } from "./daily-tip";
 
 /**
  * Shared-secret guard for cron endpoints. Railway cron hits these with a
@@ -115,6 +117,54 @@ export function registerCronRoutes(app: Express) {
           sent: result.sent,
           reason: result.sent ? undefined : result.reason,
         });
+      }
+      res.json({ processed: targets.length, results });
+    },
+  );
+
+  // ─── Daily coach tip email ───────────────────────────────
+  // Trigger this endpoint once per day (e.g. from n8n Schedule Trigger at 7:00).
+  // It sends at most one daily_coach_tip per user per day (idempotent via dedup key).
+  app.post(
+    "/internal/cron/daily-coach-tip",
+    requireCronSecret,
+    async (_req, res) => {
+      const now = new Date();
+      const allUsers = await db.select().from(users);
+      const targets = allUsers.filter((u) => u.emailNudges && u.email);
+
+      const results: Array<{
+        userId: number;
+        sent: boolean;
+        reason?: string;
+      }> = [];
+      for (const u of targets) {
+        const today = ymdInTz(now, u.timezone);
+        try {
+          const tip = await generateDailyTip(u.id);
+          const tpl = renderDailyCoachTip(u.username, tip);
+          const result = await sendEmailOnce({
+            userId: u.id,
+            to: u.email!,
+            kind: "daily_coach_tip",
+            dedupKey: `daily_coach_tip:${today}`,
+            subject: tpl.subject,
+            html: tpl.html,
+            text: tpl.text,
+          });
+          results.push({
+            userId: u.id,
+            sent: result.sent,
+            reason: result.sent ? undefined : result.reason,
+          });
+        } catch (err) {
+          console.error(`daily-coach-tip failed for user ${u.id}:`, err);
+          results.push({
+            userId: u.id,
+            sent: false,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
       res.json({ processed: targets.length, results });
     },

@@ -58,7 +58,10 @@ export const EVENT_COLORS: Record<string, string> = {
   floorball_training: "bg-green-500",
   floorball_match: "bg-green-700",
   running: "bg-orange-500",
+  swimming: "bg-cyan-500",
+  home_exercises: "bg-amber-500",
   rest: "bg-slate-500",
+  physio: "bg-pink-500",
   other: "bg-purple-500",
 };
 
@@ -67,6 +70,9 @@ export const EVENT_LABELS: Record<string, string> = {
   floorball_training: "Unihokej - trening",
   floorball_match: "Unihokej - mecz",
   running: "Bieg",
+  swimming: "Basen",
+  home_exercises: "Ćwiczenia domowe",
   rest: "Odpoczynek",
+  physio: "Fizjoterapia",
   other: "Inne",
 };

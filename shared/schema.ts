@@ -139,7 +139,7 @@ export const calendarEvents = pgTable(
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
     time: text("time"), // "20:00"
-    eventType: text("event_type").notNull(), // gym | floorball_training | floorball_match | running | rest | other
+    eventType: text("event_type").notNull(), // gym | floorball_training | floorball_match | running | swimming | home_exercises | rest | physio | other
     title: text("title").notNull(),
     description: text("description"),
     isRecurring: boolean("is_recurring").notNull().default(false),
@@ -194,7 +194,7 @@ export const workoutLogs = pgTable(
     id: serial("id").primaryKey(),
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
-    workoutType: text("workout_type").notNull(), // gym | floorball | running
+    workoutType: text("workout_type").notNull(), // gym | floorball | running | swimming | home_exercises
     calendarEventId: integer("calendar_event_id").references(
       () => calendarEvents.id,
     ),
@@ -381,8 +381,8 @@ export const emailSends = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    kind: text("kind").notNull(), // morning_readiness | post_workout
-    dedupKey: text("dedup_key").notNull(), // kind + date/event, e.g. "morning_readiness:2026-04-17" or "post_workout:event:42"
+    kind: text("kind").notNull(), // morning_readiness | post_workout | daily_coach_tip
+    dedupKey: text("dedup_key").notNull(), // kind + date/event, e.g. "morning_readiness:2026-04-17", "post_workout:event:42", "daily_coach_tip:2026-04-17"
     sentAt: timestamp("sent_at").notNull().defaultNow(),
   },
   // UNIQUE (userId, dedupKey) enforces idempotent sends — a duplicate

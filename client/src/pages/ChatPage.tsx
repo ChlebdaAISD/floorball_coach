@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient, useIsMutating } from "@tanstack/react-query";
 import { Send, Loader2, Check, X, Bot, Settings, History, ArrowLeft } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { cn, apiRequest } from "@/lib/utils";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
@@ -8,6 +9,45 @@ import type { ChatMessage } from "@shared/schema";
 import { Button } from "@/components/ui/Button";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
+
+const assistantMarkdownComponents = {
+  p: ({ node: _node, ...props }: any) => (
+    <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />
+  ),
+  strong: ({ node: _node, ...props }: any) => (
+    <strong className="font-semibold text-white" {...props} />
+  ),
+  em: ({ node: _node, ...props }: any) => (
+    <em className="italic text-white/90" {...props} />
+  ),
+  ul: ({ node: _node, ...props }: any) => (
+    <ul className="my-2 ml-5 list-disc space-y-1" {...props} />
+  ),
+  ol: ({ node: _node, ...props }: any) => (
+    <ol className="my-2 ml-5 list-decimal space-y-1" {...props} />
+  ),
+  li: ({ node: _node, ...props }: any) => (
+    <li className="pl-1" {...props} />
+  ),
+  code: ({ node: _node, inline, ...props }: any) =>
+    inline ? (
+      <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs font-mono text-white/90" {...props} />
+    ) : (
+      <code className="block rounded-lg bg-black/50 p-3 text-xs font-mono text-white/80 overflow-x-auto" {...props} />
+    ),
+  a: ({ node: _node, ...props }: any) => (
+    <a className="underline text-[#c5e063] hover:text-[#d4ef72]" target="_blank" rel="noreferrer" {...props} />
+  ),
+  h1: ({ node: _node, ...props }: any) => (
+    <h1 className="mt-3 mb-1 text-base font-semibold text-white" {...props} />
+  ),
+  h2: ({ node: _node, ...props }: any) => (
+    <h2 className="mt-3 mb-1 text-sm font-semibold text-white" {...props} />
+  ),
+  h3: ({ node: _node, ...props }: any) => (
+    <h3 className="mt-2 mb-1 text-sm font-semibold text-white" {...props} />
+  ),
+};
 
 type HistoryDay = { day: string; message_count: number };
 
@@ -269,7 +309,15 @@ function MessageBubble({
                 : "bg-[#111111] border border-white/[0.1] text-white/80 rounded-2xl rounded-bl-sm",
             )}
           >
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            {isUser ? (
+              <p className="whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <div className="markdown-chat">
+                <ReactMarkdown components={assistantMarkdownComponents}>
+                  {message.content}
+                </ReactMarkdown>
+              </div>
+            )}
 
             {!isUser && suggestion && status === null && !readOnly && (
               <div className="mt-5 space-y-3 border-t border-white/[0.08] pt-4">

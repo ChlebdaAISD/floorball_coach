@@ -14,7 +14,7 @@ const DEFAULT_WEBHOOK =
 export interface SendEmailArgs {
   userId: number;
   to: string;
-  kind: "morning_readiness" | "post_workout";
+  kind: "morning_readiness" | "post_workout" | "daily_coach_tip";
   dedupKey: string;
   subject: string;
   html: string;
@@ -96,6 +96,31 @@ Wejdź: ${APP_URL}/
   <p>${greeting}</p>
   <p>Zacznij dzień od wpisania dzisiejszej gotowości — sen, HRV, body battery, ból. Trener AI dostroi plan pod to jak się czujesz.</p>
   <p><a href="${APP_URL}/" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#111;color:#fff;text-decoration:none;font-weight:600">Wpisz gotowość</a></p>
+  <p style="color:#888;font-size:12px">Floorball Coach</p>
+  </body></html>`;
+  return { subject, html, text };
+}
+
+export function renderDailyCoachTip(
+  username: string,
+  tip: { headline: string; body: string },
+): { subject: string; html: string; text: string } {
+  const subject = `Trener: ${tip.headline}`;
+  const greeting = username ? `Cześć ${username},` : "Cześć,";
+  const text = `${greeting}
+
+${tip.headline}
+
+${tip.body}
+
+Wejdź: ${APP_URL}/
+
+— Floorball Coach`;
+  const html = `<!doctype html><html><body style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111">
+  <p>${greeting}</p>
+  <h2 style="margin:12px 0 8px 0;font-size:18px">${tip.headline}</h2>
+  <p style="white-space:pre-wrap;line-height:1.55">${tip.body}</p>
+  <p><a href="${APP_URL}/" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#111;color:#fff;text-decoration:none;font-weight:600">Otwórz aplikację</a></p>
   <p style="color:#888;font-size:12px">Floorball Coach</p>
   </body></html>`;
   return { subject, html, text };

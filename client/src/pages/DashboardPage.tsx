@@ -60,16 +60,20 @@ export default function DashboardPage() {
   );
 
   const activityTotals = useMemo(() => {
-    let gym = 0, floorball = 0, running = 0;
+    let gym = 0, floorball = 0, running = 0, swimming = 0, homeExercises = 0;
     for (const w of workouts) {
       if (w.workoutType === "gym") gym++;
       else if (w.workoutType === "floorball") floorball++;
       else if (w.workoutType === "running") running++;
+      else if (w.workoutType === "swimming") swimming++;
+      else if (w.workoutType === "home_exercises") homeExercises++;
     }
     return [
       { name: "Siłownia", count: gym, fill: "#ffffff" },
       { name: "Unihokej", count: floorball, fill: "rgba(255,255,255,0.5)" },
       { name: "Bieg", count: running, fill: "rgba(255,255,255,0.7)" },
+      { name: "Basen", count: swimming, fill: "rgba(6,182,212,0.8)" },
+      { name: "Ćw. domowe", count: homeExercises, fill: "rgba(245,158,11,0.8)" },
     ];
   }, [workouts]);
 

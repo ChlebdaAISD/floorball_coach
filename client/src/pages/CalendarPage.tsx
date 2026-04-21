@@ -430,7 +430,14 @@ function EventFormModal({
   const [eventType, setEventType] = useState("gym");
   const [time, setTime] = useState("20:00");
   const [eventDate, setEventDate] = useState(date);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [warmup, setWarmup] = useState("");
+  const [mainBlock, setMainBlock] = useState("");
+  const [cooldown, setCooldown] = useState("");
+  const [sessionNotes, setSessionNotes] = useState("");
   const queryClient = useQueryClient();
+
+  const showDetailsOption = !eventType.startsWith("floorball") && eventType !== "gym";
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -447,12 +454,28 @@ function EventFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const hasDetails =
+      showDetailsOption &&
+      (warmup.trim() || mainBlock.trim() || cooldown.trim() || sessionNotes.trim());
+    const description = hasDetails
+      ? JSON.stringify({
+          type: eventType,
+          warmup: warmup.trim() ? { notes: warmup.trim() } : undefined,
+          main: mainBlock.trim()
+            ? [{ kind: "freeform", text: mainBlock.trim() }]
+            : [],
+          cooldown: cooldown.trim() ? { notes: cooldown.trim() } : undefined,
+          notes: sessionNotes.trim() || undefined,
+        })
+      : undefined;
+
     createMutation.mutate({
       date: eventDate,
       time: time || null,
       eventType,
       title: title || EVENT_LABELS[eventType],
       source: "manual",
+      ...(description ? { description } : {}),
     });
   };
 
@@ -510,6 +533,71 @@ function EventFormModal({
               />
             </div>
           </div>
+
+          {showDetailsOption && !detailsOpen && (
+            <button
+              type="button"
+              onClick={() => setDetailsOpen(true)}
+              className="w-full rounded-xl border border-dashed border-white/[0.18] bg-black/20 py-3 text-xs text-white/50 hover:border-white/30 hover:text-white transition-colors"
+            >
+              + Dodaj szczegóły treningu
+            </button>
+          )}
+
+          {showDetailsOption && detailsOpen && (
+            <div className="space-y-3 rounded-xl border border-white/[0.08] bg-black/20 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold tracking-widest text-white/40 uppercase">Szczegóły</p>
+                <button
+                  type="button"
+                  onClick={() => setDetailsOpen(false)}
+                  className="text-[10px] text-white/40 hover:text-white/70"
+                >
+                  zwiń
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-white/50">Rozgrzewka</label>
+                <textarea
+                  value={warmup}
+                  onChange={(e) => setWarmup(e.target.value)}
+                  placeholder="np. 5 min trucht Z1 + krążenia"
+                  rows={2}
+                  className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-white/50">Trening (ćwiczenia / interwały / tempo)</label>
+                <textarea
+                  value={mainBlock}
+                  onChange={(e) => setMainBlock(e.target.value)}
+                  placeholder={"np. 6× 400m @ 4:00/km, przerwa 90s\nlub 20 min ciągły bieg Z2 w tempie 5:30/km"}
+                  rows={4}
+                  className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-white/50">Cooldown</label>
+                <textarea
+                  value={cooldown}
+                  onChange={(e) => setCooldown(e.target.value)}
+                  placeholder="np. 5 min spacer + rozciąganie"
+                  rows={2}
+                  className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-white/50">Uwagi (opcjonalnie)</label>
+                <textarea
+                  value={sessionNotes}
+                  onChange={(e) => setSessionNotes(e.target.value)}
+                  placeholder="dodatkowe notatki..."
+                  rows={2}
+                  className="w-full rounded-xl border border-white/[0.12] bg-black/40 px-3 py-2 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-8 mb-2">

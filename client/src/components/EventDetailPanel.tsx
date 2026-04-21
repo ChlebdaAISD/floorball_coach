@@ -21,7 +21,7 @@ function parseNotes(notes: string | null | undefined): Record<string, any> | nul
   try { return JSON.parse(notes); } catch { return null; }
 }
 
-export type SubflowStep = "zone-stats" | "gym-details" | "gym-quick";
+export type SubflowStep = "zone-stats" | "gym-details" | "gym-quick" | "simple-stats";
 
 interface Props {
   event: CalendarEvent;
@@ -38,17 +38,36 @@ export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflo
   const isGym = event.eventType === "gym";
   const isFloorball = event.eventType.startsWith("floorball");
   const isRunning = event.eventType === "running";
-  const isSimple = !isGym && !isFloorball && !isRunning;
+  const isSwimming = event.eventType === "swimming";
+  const isHomeExercises = event.eventType === "home_exercises";
+  const isSimpleTraining = isSwimming || isHomeExercises;
+  const isSimple = !isGym && !isFloorball && !isRunning && !isSimpleTraining;
   const savedData = parseNotes(event.notes);
-  const gymPlan = (() => {
-    if (!isGym || !event.description) return null;
+  const parsedDescription = (() => {
+    if (!event.description) return null;
     try {
-      const d = JSON.parse(event.description);
-      return Array.isArray(d.plan) ? d.plan : null;
+      return JSON.parse(event.description) as Record<string, any>;
     } catch {
       return null;
     }
   })();
+  const gymPlan =
+    isGym && parsedDescription && Array.isArray(parsedDescription.plan)
+      ? parsedDescription.plan
+      : null;
+  const trainingDetails =
+    parsedDescription &&
+    !gymPlan &&
+    (parsedDescription.warmup ||
+      (Array.isArray(parsedDescription.main) && parsedDescription.main.length > 0) ||
+      parsedDescription.cooldown ||
+      parsedDescription.notes)
+      ? parsedDescription
+      : null;
+  const plainDescription =
+    event.description && !parsedDescription && !event.description.startsWith("{")
+      ? event.description
+      : null;
 
   const [noteDraft, setNoteDraft] = useState<string>(event.notes ?? "");
   const [showFizjoPrompt, setShowFizjoPrompt] = useState(false);
@@ -83,9 +102,11 @@ export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflo
         </button>
       </div>
 
-      {event.description && !event.description.startsWith("{") && (
-        <p className="text-sm text-white/60 leading-relaxed">{event.description}</p>
+      {plainDescription && (
+        <p className="text-sm text-white/60 leading-relaxed">{plainDescription}</p>
       )}
+
+      {trainingDetails && <TrainingDetailsBlock details={trainingDetails} />}
 
       {gymPlan && (
         <div className="space-y-2">
@@ -213,6 +234,17 @@ export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflo
         </div>
       )}
 
+      {showActions && isPlanned && isSimpleTraining && (
+        <div className="flex gap-2">
+          <button onClick={() => startSubflow("simple-stats")} className={btnPrimary}>
+            Zakończono
+          </button>
+          <button onClick={handleSkip} disabled={updateMutation.isPending} className={btnSecondary}>
+            Niezrealizowano
+          </button>
+        </div>
+      )}
+
       {showActions && !isPlanned && (
         <button
           onClick={() => updateMutation.mutate({ status: "planned" })}
@@ -226,6 +258,85 @@ export function EventDetailPanel({ event, onClose, onEventUpdated, onStartSubflo
       {mode === "view-only" && isSkipped && (
         <p className="text-xs text-white/40 italic">Pominięto.</p>
       )}
+    </div>
+  );
+}
+
+function TrainingDetailsBlock({ details }: { details: Record<string, any> }) {
+  const warmup = details.warmup as { duration?: string; notes?: string } | undefined;
+  const main = Array.isArray(details.main) ? (details.main as Array<Record<string, any>>) : [];
+  const cooldown = details.cooldown as { duration?: string; notes?: string } | undefined;
+  const notes = typeof details.notes === "string" ? details.notes : null;
+
+  const renderMainItem = (item: Record<string, any>, i: number) => {
+    const kind = item.kind as string | undefined;
+    let title = "";
+    let subtitle = "";
+
+    if (kind === "interval") {
+      title = `${item.repeats ?? "?"}× ${item.work ?? ""}`.trim();
+      subtitle = item.rest ? `Przerwa: ${item.rest}` : "";
+    } else if (kind === "steady") {
+      title = item.duration ?? "";
+      const bits: string[] = [];
+      if (item.pace) bits.push(`tempo ${item.pace}`);
+      if (item.hr_zone) bits.push(`strefa ${item.hr_zone}`);
+      subtitle = bits.join(" · ");
+    } else if (kind === "exercise") {
+      title = item.name ?? "";
+      const bits: string[] = [];
+      if (item.sets) bits.push(`${item.sets} serie`);
+      if (item.reps) bits.push(`${item.reps} powt.`);
+      subtitle = bits.join(" · ");
+    } else if (kind === "freeform") {
+      return (
+        <div key={i} className="rounded-xl bg-black/40 border border-white/[0.08] p-3">
+          <p className="whitespace-pre-wrap text-sm text-white/80">{item.text ?? ""}</p>
+        </div>
+      );
+    } else {
+      title = item.name ?? item.title ?? JSON.stringify(item);
+    }
+
+    return (
+      <div key={i} className="rounded-xl bg-black/40 border border-white/[0.08] p-3">
+        {title && <p className="font-medium text-sm text-white">{title}</p>}
+        {subtitle && <p className="text-xs text-white/50 mt-0.5">{subtitle}</p>}
+        {item.notes && <p className="mt-1 text-xs text-white/30">{item.notes}</p>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {warmup && (warmup.duration || warmup.notes) && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] uppercase tracking-widest text-white/40">Rozgrzewka</p>
+          <div className="rounded-xl bg-black/40 border border-white/[0.08] p-3">
+            {warmup.duration && <p className="text-sm text-white">{warmup.duration}</p>}
+            {warmup.notes && <p className="text-xs text-white/50 mt-0.5">{warmup.notes}</p>}
+          </div>
+        </div>
+      )}
+
+      {main.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] uppercase tracking-widest text-white/40">Trening</p>
+          <div className="space-y-2">{main.map(renderMainItem)}</div>
+        </div>
+      )}
+
+      {cooldown && (cooldown.duration || cooldown.notes) && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] uppercase tracking-widest text-white/40">Cooldown</p>
+          <div className="rounded-xl bg-black/40 border border-white/[0.08] p-3">
+            {cooldown.duration && <p className="text-sm text-white">{cooldown.duration}</p>}
+            {cooldown.notes && <p className="text-xs text-white/50 mt-0.5">{cooldown.notes}</p>}
+          </div>
+        </div>
+      )}
+
+      {notes && <p className="text-xs text-white/40 italic">"{notes}"</p>}
     </div>
   );
 }
@@ -260,6 +371,16 @@ export function CompletionSummary({ data }: { data: Record<string, any> }) {
             {Object.values(data.exerciseState as Record<number, { completed: boolean }>).filter((s) => s.completed).length} ćwiczeń
           </span>
         )}
+        {data.sessionNotes && <p className="w-full text-xs text-white/40 italic">"{data.sessionNotes}"</p>}
+      </div>
+    );
+  }
+
+  if (data.type === "simple_stats") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {data.durationMinutes && <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60">{data.durationMinutes} min</span>}
+        {data.rpe && <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60">RPE {data.rpe}</span>}
         {data.sessionNotes && <p className="w-full text-xs text-white/40 italic">"{data.sessionNotes}"</p>}
       </div>
     );

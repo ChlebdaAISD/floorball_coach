@@ -7,6 +7,8 @@ import {
   Dumbbell,
   Target,
   Footprints,
+  Waves,
+  Home,
   ChevronRight,
   Loader2,
   Settings,
@@ -14,7 +16,16 @@ import {
 import { useSettings } from "@/contexts/SettingsContext";
 import { useSetTopNav } from "@/contexts/TopNavContext";
 
-type WorkoutType = "all" | "gym" | "floorball" | "running";
+type WorkoutType = "all" | "gym" | "floorball" | "running" | "swimming" | "home_exercises";
+
+const FILTER_LABELS: Record<WorkoutType, string> = {
+  all: "Wszystkie",
+  gym: "Siłownia",
+  floorball: "Unihokej",
+  running: "Bieg",
+  swimming: "Basen",
+  home_exercises: "Ćwiczenia domowe",
+};
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<WorkoutType>("all");
@@ -60,7 +71,7 @@ export default function HistoryPage() {
         data-no-swipe
         className="mb-6 flex gap-2 overflow-x-auto touch-pan-x pb-2 scrollbar-none"
       >
-        {(["all", "gym", "floorball", "running"] as WorkoutType[]).map((t) => (
+        {(["all", "gym", "floorball", "running", "swimming", "home_exercises"] as WorkoutType[]).map((t) => (
           <button
             key={t}
             onClick={() => setFilter(t)}
@@ -71,7 +82,7 @@ export default function HistoryPage() {
                 : "bg-transparent border-white/[0.15] text-white/40 hover:text-white hover:border-white/30"
             )}
           >
-            {t === "all" ? "Wszystkie" : t === "gym" ? "Siłownia" : t === "floorball" ? "Unihokej" : "Bieg"}
+            {FILTER_LABELS[t]}
           </button>
         ))}
       </div>
@@ -98,6 +109,8 @@ export default function HistoryPage() {
                     {w.workoutType === "gym" && <Dumbbell size={20} strokeWidth={1} className="text-[#c5e063]" />}
                     {w.workoutType === "floorball" && <Target size={20} strokeWidth={1} className="text-[#c5e063]" />}
                     {w.workoutType === "running" && <Footprints size={20} strokeWidth={1} className="text-[#c5e063]" />}
+                    {w.workoutType === "swimming" && <Waves size={20} strokeWidth={1} className="text-[#c5e063]" />}
+                    {w.workoutType === "home_exercises" && <Home size={20} strokeWidth={1} className="text-[#c5e063]" />}
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-white">
@@ -107,7 +120,11 @@ export default function HistoryPage() {
                           ? w.floorballType === "match"
                             ? "Mecz"
                             : "Trening drużynowy"
-                          : "Bieg"}
+                          : w.workoutType === "swimming"
+                            ? "Basen"
+                            : w.workoutType === "home_exercises"
+                              ? "Ćwiczenia domowe"
+                              : "Bieg"}
                     </p>
                     <p className="text-[11px] text-white/30 font-light mt-1 tracking-wide">
                       {format(parseISO(w.date), "EEEE, d MMM", { locale: pl })}

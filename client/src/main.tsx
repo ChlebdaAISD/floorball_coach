@@ -14,8 +14,6 @@ export const queryClient = new QueryClient({
   },
 });
 
-const STREAM_PLACEHOLDER_ID = -1;
-
 function setChatMessages(
   updater: (prev: ChatMessage[]) => ChatMessage[],
 ) {
@@ -38,70 +36,22 @@ queryClient.setMutationDefaults(["chat-send"], {
       contextType: "chat",
       extractedData: null,
     };
-    const assistantPlaceholder: ChatMessage = {
-      id: STREAM_PLACEHOLDER_ID,
-      userId: 0,
-      role: "assistant",
-      content: "",
-      createdAt: new Date() as any,
-      planSuggestion: null,
-      suggestionStatus: null,
-      contextType: "chat",
-      extractedData: null,
-    };
 
-    setChatMessages((prev) => [...prev, userOptimistic, assistantPlaceholder]);
+    setChatMessages((prev) => [...prev, userOptimistic]);
 
-    const res = await fetch("/api/chat/stream", {
+    const res = await fetch("/api/chat", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content }),
     });
 
-    if (!res.ok || !res.body) {
-      setChatMessages((prev) => prev.filter((m) => m.id !== STREAM_PLACEHOLDER_ID && m.id !== -2));
-      throw new Error("Chat stream failed");
+    if (!res.ok) {
+      setChatMessages((prev) => prev.filter((m) => m.id !== -2));
+      throw new Error("Chat request failed");
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let accumulated = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let idx: number;
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-
-        const line = rawEvent.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        const payload = line.slice(6);
-        if (!payload) continue;
-
-        try {
-          const event = JSON.parse(payload);
-          if (event.type === "chunk") {
-            accumulated += event.text;
-            setChatMessages((prev) =>
-              prev.map((m) =>
-                m.id === STREAM_PLACEHOLDER_ID ? { ...m, content: accumulated } : m,
-              ),
-            );
-          } else if (event.type === "done" || event.type === "error") {
-            return event.message as ChatMessage;
-          }
-        } catch {
-          // ignore malformed chunk
-        }
-      }
-    }
-    return null as any;
+    return (await res.json()) as ChatMessage;
   },
   onSettled: () => {
     queryClient.invalidateQueries({ queryKey: ["chat"] });

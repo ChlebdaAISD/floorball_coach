@@ -4,6 +4,9 @@ import {
   Dumbbell,
   Target,
   Footprints,
+  Waves,
+  Home,
+  HeartPulse,
   CheckCircle2,
   AlertTriangle,
   Loader2,
@@ -43,7 +46,7 @@ function rpeLabel(rpe: number) {
   return "Maksymalny wysiłek";
 }
 
-type Step = "events" | "gym-details" | "zone-stats" | "gym-quick" | "done";
+type Step = "events" | "gym-details" | "zone-stats" | "gym-quick" | "simple-stats" | "done";
 
 // ─── Main Page ────────────────────────────────────────────────
 export default function TodayPage() {
@@ -169,6 +172,10 @@ export default function TodayPage() {
     return <QuickCompleteForm event={selectedEvent} onComplete={onWorkoutSaved} onBack={goBack} />;
   }
 
+  if (step === "simple-stats" && selectedEvent) {
+    return <SimpleStatsForm event={selectedEvent} onComplete={onWorkoutSaved} onBack={goBack} />;
+  }
+
   const handleStartSubflow = (substep: SubflowStep, event: CalendarEvent) => {
     setSelectedEvent(event);
     setStep(substep);
@@ -196,6 +203,9 @@ export default function TodayPage() {
             const isGym = event.eventType === "gym";
             const isFloorball = event.eventType.startsWith("floorball");
             const isRunning = event.eventType === "running";
+            const isSwimming = event.eventType === "swimming";
+            const isHomeExercises = event.eventType === "home_exercises";
+            const isPhysio = event.eventType === "physio";
 
             return (
               <div key={event.id}>
@@ -214,6 +224,9 @@ export default function TodayPage() {
                       : isGym ? <Dumbbell className="h-5 w-5 text-white/60" strokeWidth={1} />
                       : isFloorball ? <Target className="h-5 w-5 text-white/60" strokeWidth={1} />
                       : isRunning ? <Footprints className="h-5 w-5 text-white/60" strokeWidth={1} />
+                      : isSwimming ? <Waves className="h-5 w-5 text-white/60" strokeWidth={1} />
+                      : isHomeExercises ? <Home className="h-5 w-5 text-white/60" strokeWidth={1} />
+                      : isPhysio ? <HeartPulse className="h-5 w-5 text-white/60" strokeWidth={1} />
                       : <Activity className="h-5 w-5 text-white/60" strokeWidth={1} />}
                   </div>
                   <div className="flex-1">
@@ -376,6 +389,64 @@ function QuickCompleteForm({ event, onComplete, onBack }: { event: CalendarEvent
           onClick={() => mutation.mutate({
             date: todayStr(), workoutType: "gym", calendarEventId: event.id, rpe, notes: notes || null,
             eventNotes: JSON.stringify({ type: "gym_quick", rpe, sessionNotes: notes }),
+          })}
+          disabled={mutation.isPending}
+          className={btnPrimary}
+        >
+          {mutation.isPending ? "Zapisuję..." : "Zapisz trening"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Simple Stats Form (basen + ćwiczenia domowe) ────────────
+function SimpleStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; onComplete: (workoutId: number) => void; onBack: () => void }) {
+  const savedData = parseNotes(event.notes);
+  const [duration, setDuration] = useState<number>(savedData?.durationMinutes ?? 30);
+  const [rpe, setRpe] = useState<number>(savedData?.rpe ?? 6);
+  const [notes, setNotes] = useState<string>(savedData?.sessionNotes ?? "");
+
+  const mutation = useMutation({
+    mutationFn: (data: any) => apiRequest<{ id: number }>("/api/workouts", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (result) => onComplete(result.id),
+  });
+
+  const isSwimming = event.eventType === "swimming";
+  const workoutType = isSwimming ? "swimming" : "home_exercises";
+  const categoryLabel = isSwimming ? "Basen" : "Ćwiczenia domowe";
+
+  return (
+    <div className="p-4">
+      <button onClick={onBack} className="mb-4 text-xs text-white/40 hover:text-white/60 transition-colors">← Wróć</button>
+      <p className="text-[11px] uppercase tracking-widest text-white/40 mb-1">{categoryLabel}</p>
+      <h2 className="mb-5 text-xl font-semibold">{event.title}</h2>
+
+      <div className="space-y-5">
+        <SliderField label="Czas trwania (min)" value={duration} min={5} max={180} onChange={setDuration} />
+
+        <div>
+          <SliderField label="RPE — odczuwany wysiłek" value={rpe} min={1} max={10} onChange={setRpe} />
+          <p className="mt-1 text-[10px] text-white/20">{rpeLabel(rpe)}</p>
+        </div>
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notatki (samopoczucie, ćwiczenia...)"
+          rows={3}
+          className="w-full rounded-2xl border border-white/[0.12] bg-[#111111] px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-white/25 resize-none"
+        />
+
+        <button
+          onClick={() => mutation.mutate({
+            date: todayStr(),
+            workoutType,
+            calendarEventId: event.id,
+            durationMinutes: duration,
+            rpe,
+            notes: notes || null,
+            eventNotes: JSON.stringify({ type: "simple_stats", durationMinutes: duration, rpe, sessionNotes: notes }),
           })}
           disabled={mutation.isPending}
           className={btnPrimary}
