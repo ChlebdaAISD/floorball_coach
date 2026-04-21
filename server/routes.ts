@@ -441,6 +441,7 @@ export function registerRoutes(app: Express) {
           if (change.event_type) updates.eventType = change.event_type;
           if (change.time !== undefined) updates.time = change.time;
           if (change.date) updates.date = change.date;
+          if (change.details) updates.description = JSON.stringify(change.details);
           if (Object.keys(updates).length > 0) {
             await db
               .update(calendarEvents)
