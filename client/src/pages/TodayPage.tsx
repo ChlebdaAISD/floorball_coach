@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dumbbell,
@@ -29,10 +30,6 @@ const btnPrimary = cn(buttonVariants({ variant: "primary", size: "md" }), "w-ful
 const btnSecondary = cn(buttonVariants({ variant: "secondary", size: "md" }), "w-full");
 
 // ─── Helpers ──────────────────────────────────────────────────
-function todayStr() {
-  return new Date().toLocaleDateString("sv-SE");
-}
-
 function parseNotes(notes: string | null | undefined): Record<string, any> | null {
   if (!notes) return null;
   try { return JSON.parse(notes); } catch { return null; }
@@ -51,6 +48,13 @@ type Step = "events" | "gym-details" | "zone-stats" | "gym-quick" | "simple-stat
 // ─── Main Page ────────────────────────────────────────────────
 export default function TodayPage() {
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+  const searchStr = useSearch();
+  const logEventIdRaw = new URLSearchParams(searchStr).get("logEvent");
+  const logEventId =
+    logEventIdRaw !== null && /^\d+$/.test(logEventIdRaw)
+      ? parseInt(logEventIdRaw, 10)
+      : null;
   const [step, setStep] = useState<Step>("events");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [expandedEvent, setExpandedEvent] = useState<CalendarEvent | null>(null);
@@ -85,6 +89,27 @@ export default function TodayPage() {
     queryFn: () => apiRequest("/api/readiness/today"),
   });
 
+  const { data: catchUpEvent, isError: catchUpError } = useQuery<CalendarEvent>({
+    queryKey: ["calendar-event", logEventId],
+    queryFn: () => apiRequest(`/api/calendar/events/${logEventId}`),
+    enabled: logEventId !== null,
+  });
+
+  useEffect(() => {
+    if (!logEventId || isLoadingEvents) return;
+    const match = todayEvents.find((e) => e.id === logEventId);
+    if (match && match.status === "planned") {
+      setExpandedEvent((prev) => (prev?.id === match.id ? prev : match));
+    }
+  }, [logEventId, todayEvents, isLoadingEvents]);
+
+  const catchUpDisplay =
+    catchUpEvent &&
+    catchUpEvent.status === "planned" &&
+    !todayEvents.some((e) => e.id === catchUpEvent.id)
+      ? catchUpEvent
+      : null;
+
   const [savedWorkoutId, setSavedWorkoutId] = useState<number | null>(null);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -117,10 +142,14 @@ export default function TodayPage() {
     setSavedWorkoutId(null);
     setAiFeedback(null);
     setIsAnalyzing(false);
+    if (logEventId) navigate("/", { replace: true });
   };
 
   const onWorkoutSaved = (workoutId: number) => {
     queryClient.invalidateQueries({ queryKey: ["today-events"] });
+    if (logEventId) {
+      queryClient.invalidateQueries({ queryKey: ["calendar-event", logEventId] });
+    }
     setSavedWorkoutId(workoutId);
     setStep("done");
     // Fire-and-forget AI analysis
@@ -187,6 +216,36 @@ export default function TodayPage() {
       <div className="px-4 space-y-4 pb-8 pt-4">
 
       <InsightList />
+
+      {/* Catch-up fetch failed */}
+      {logEventId !== null && catchUpError && (
+        <div className="rounded-2xl border border-amber-400/25 bg-amber-400/[0.04] p-4 text-xs text-amber-200">
+          Nie udało się załadować treningu do uzupełnienia.{" "}
+          <button
+            onClick={() => navigate("/", { replace: true })}
+            className="underline hover:text-amber-100"
+          >
+            Zamknij
+          </button>
+        </div>
+      )}
+
+      {/* Catch-up panel: event from another date (e.g. yesterday's missed workout) */}
+      {catchUpDisplay && (
+        <div className="space-y-3">
+          <p className="text-[11px] uppercase tracking-widest text-amber-300/70">Do uzupełnienia</p>
+          <EventDetailPanel
+            event={catchUpDisplay}
+            onClose={() => navigate("/", { replace: true })}
+            onEventUpdated={() => {
+              queryClient.invalidateQueries({ queryKey: ["calendar-event", logEventId] });
+              queryClient.invalidateQueries({ queryKey: ["today-events"] });
+              queryClient.invalidateQueries({ queryKey: ["calendar"] });
+            }}
+            onStartSubflow={handleStartSubflow}
+          />
+        </div>
+      )}
 
       {/* Event list */}
       {todayEvents.length === 0 ? (
@@ -337,7 +396,7 @@ function ZoneStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; on
 
         <button
           onClick={() => mutation.mutate({
-            date: todayStr(),
+            date: event.date,
             workoutType: isFloorball ? "floorball" : "running",
             calendarEventId: event.id,
             rpe,
@@ -387,7 +446,7 @@ function QuickCompleteForm({ event, onComplete, onBack }: { event: CalendarEvent
         />
         <button
           onClick={() => mutation.mutate({
-            date: todayStr(), workoutType: "gym", calendarEventId: event.id, rpe, notes: notes || null,
+            date: event.date, workoutType: "gym", calendarEventId: event.id, rpe, notes: notes || null,
             eventNotes: JSON.stringify({ type: "gym_quick", rpe, sessionNotes: notes }),
           })}
           disabled={mutation.isPending}
@@ -440,7 +499,7 @@ function SimpleStatsForm({ event, onComplete, onBack }: { event: CalendarEvent; 
 
         <button
           onClick={() => mutation.mutate({
-            date: todayStr(),
+            date: event.date,
             workoutType,
             calendarEventId: event.id,
             durationMinutes: duration,
@@ -484,7 +543,7 @@ function GymWorkout({ event, onComplete, onBack }: { event: CalendarEvent; onCom
 
   const handleSave = () => {
     mutation.mutate({
-      date: todayStr(),
+      date: event.date,
       workoutType: "gym",
       calendarEventId: event.id,
       rpe,

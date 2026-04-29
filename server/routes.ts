@@ -408,6 +408,22 @@ export function registerRoutes(app: Express) {
     res.status(204).end();
   });
 
+  app.get("/api/calendar/events/:id", requireAuth, async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "Nieprawidłowe ID" });
+    }
+    const userId = req.session.userId!;
+    const [event] = await db
+      .select()
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.userId, userId)));
+    if (!event) {
+      return res.status(404).json({ error: "Nie znaleziono wydarzenia" });
+    }
+    res.json(event);
+  });
+
   app.post("/api/calendar/apply-suggestion", requireAuth, async (req, res) => {
     const { changes, messageId } = req.body;
     const userId = req.session.userId!;

@@ -65,7 +65,8 @@ function InsightCard({ insight }: { insight: AiInsight }) {
       invalidate();
       // Client-side navigation for actions the server can't complete itself.
       if (insight.actionKind === "log_workout") {
-        navigate("/");
+        const eventId = (insight.actionPayload as { eventId?: number } | null)?.eventId;
+        navigate(eventId ? `/?logEvent=${eventId}` : "/");
       } else if (insight.actionKind === "swap_exercises") {
         navigate("/trener");
       } else if (insight.actionKind === "ease_today") {
